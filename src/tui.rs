@@ -314,6 +314,14 @@ fn handle_document_key(app: &mut App, key: KeyEvent) {
     if handle_content_scroll_key(app, key) {
         return;
     }
+    // Ctrl+S writes the file. Handled ahead of the plain-key match so the
+    // Ctrl modifier is honoured rather than falling through to a bare letter.
+    if key.modifiers.contains(KeyModifiers::CONTROL)
+        && matches!(key.code, KeyCode::Char(c) if c.eq_ignore_ascii_case(&'s'))
+    {
+        app.save();
+        return;
+    }
     match key.code {
         KeyCode::Up | KeyCode::Char('k') => app.move_by(-1),
         KeyCode::Down | KeyCode::Char('j') => app.move_by(1),
@@ -331,7 +339,6 @@ fn handle_document_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('d') => app.delete_selected(),
         KeyCode::Char('K') => app.move_selected(-1),
         KeyCode::Char('J') => app.move_selected(1),
-        KeyCode::Char('s') => app.save(),
         KeyCode::Char('z') => app.start_decrypt(),
         KeyCode::Char('/') => app.start_filter(),
         _ => {}
@@ -3421,13 +3428,13 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     let hints = match app.mode {
         // Single-file mode: no browser pane, no re-signing — trimmed hints.
         Mode::Browse if app.single_file => {
-            "q quit  Alt+m menu  ↑↓ move  ←→ fold  ⏎ toggle  e edit  E edit-menu  i/I insert  d delete  J/K reorder  s save  z decrypt  [ ] scroll  { } start/end"
+            "q quit  Alt+m menu  ↑↓ move  ←→ fold  ⏎ toggle  e edit  E edit-menu  i/I insert  d delete  J/K reorder  Ctrl+s save  z decrypt  [ ] scroll  { } start/end"
         }
         Mode::Browse if app.focus == Focus::Browser => {
             "q quit  Alt+m menu  Tab switch pane  ↑↓ move+preview  ←→ fold  ⏎ switch to file/fold  z decrypt/re-sign  t trust"
         }
         Mode::Browse => {
-            "q quit  Alt+m menu  Tab switch pane  ↑↓ move  ←→ fold  ⏎ toggle  e edit  E edit-menu  i/I insert  d delete  J/K reorder  s save  z decrypt/re-sign  [ ] scroll  { } start/end"
+            "q quit  Alt+m menu  Tab switch pane  ↑↓ move  ←→ fold  ⏎ toggle  e edit  E edit-menu  i/I insert  d delete  J/K reorder  Ctrl+s save  z decrypt/re-sign  [ ] scroll  { } start/end"
         }
         Mode::MenuBar(_) => "←→ menu  ↑↓ entry  ⏎ run  Esc close",
         Mode::NewFile(_) => "type a path  ←→ cursor  ⏎ create  Esc cancel",

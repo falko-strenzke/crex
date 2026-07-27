@@ -1399,7 +1399,7 @@ pub const HELP_TOPICS: &[HelpTopic] = &[
             "",
             "'J' and 'K' move the selected element down and up among its siblings.",
             "",
-            "'s' writes the document to its output file — the input file, or whatever '-o' \
+            "'Ctrl+S' writes the document to its output file — the input file, or whatever '-o' \
              named. Nothing is written to disk until then; 'q' warns once when there are \
              unsaved changes and quits on the second press.",
         ],
@@ -1474,7 +1474,7 @@ pub const HELP_TOPICS: &[HelpTopic] = &[
              already exist, and an existing file is never overwritten — the dialog says so and \
              stays open. 'i' then inserts the document's first element.",
             "",
-            "\"File ▸ Save\" is the same action as 's'.",
+            "\"File ▸ Save\" is the same action as 'Ctrl+S'.",
             "",
             "\"About ▸ Version\" distinguishes an official build, made from a tagged release \
              and identified by its version number, from a general build, which has no version \
@@ -1517,7 +1517,7 @@ pub const HELP_TOPICS: &[HelpTopic] = &[
             "  i  I                  insert a sibling / a first child",
             "  d d                   delete the selected element",
             "  J  K                  move it down / up among its siblings",
-            "  s                     save",
+            "  Ctrl+S                save",
             "  z                     decrypt, or re-sign",
             "  /                     filter the tree",
             "",
@@ -3176,7 +3176,7 @@ impl App {
         // Auto-save the re-signed object in place, matching the re-key flow.
         self.status = match self.write_current() {
             Ok(_) => format!("new signature created — saved {}", file_name_string(&self.out_path)),
-            Err(e) => format!("new signature created — SAVE FAILED ({}); 's' retries", e),
+            Err(e) => format!("new signature created — SAVE FAILED ({}); 'Ctrl+S' retries", e),
         };
     }
 
@@ -3441,7 +3441,7 @@ impl App {
         self.mode = Mode::Browse;
         self.dirty = true;
         self.rebuild();
-        self.status = "Basic Constraints updated — 's' writes the file".to_string();
+        self.status = "Basic Constraints updated — 'Ctrl+S' writes the file".to_string();
     }
 
     /// If the current tree selection lies within a `KeyUsage` extension in the
@@ -3505,7 +3505,7 @@ impl App {
         self.mode = Mode::Browse;
         self.dirty = true;
         self.rebuild();
-        self.status = "Key Usage updated — 's' writes the file".to_string();
+        self.status = "Key Usage updated — 'Ctrl+S' writes the file".to_string();
     }
 
     /// If the current tree selection lies within an `ExtendedKeyUsage`
@@ -3624,7 +3624,7 @@ impl App {
         self.mode = Mode::Browse;
         self.dirty = true;
         self.rebuild();
-        self.status = "Extended Key Usage updated — 's' writes the file".to_string();
+        self.status = "Extended Key Usage updated — 'Ctrl+S' writes the file".to_string();
     }
 
     /// Open the public-key modification dialog for the open certificate,
@@ -4256,7 +4256,7 @@ impl App {
         }
         match saved {
             Ok(_) => summary.push_str(&format!(" — saved {}", file_name_string(&self.out_path))),
-            Err(e) => summary.push_str(&format!(" — SAVE FAILED ({}); 's' retries", e)),
+            Err(e) => summary.push_str(&format!(" — SAVE FAILED ({}); 'Ctrl+S' retries", e)),
         }
         summary
     }
@@ -5796,7 +5796,7 @@ impl App {
         self.dirty = true;
         self.rebuild();
         self.status = format!(
-            "type changed to {} — 's' writes the file",
+            "type changed to {} — 'Ctrl+S' writes the file",
             ber::type_name_of(class, tag)
         );
     }
@@ -5855,7 +5855,7 @@ impl App {
         {
             self.select(i);
         }
-        self.status = "element moved — 's' writes the file".to_string();
+        self.status = "element moved — 'Ctrl+S' writes the file".to_string();
     }
 
     /// Delete the selected element (two-step: the first call only arms the
@@ -5910,9 +5910,9 @@ impl App {
         self.dirty = true;
         self.rebuild();
         self.status = if self.rows.is_empty() {
-            "element deleted — document is now empty ('i' inserts, 's' writes)".to_string()
+            "element deleted — document is now empty ('i' inserts, 'Ctrl+S' writes)".to_string()
         } else {
-            "element deleted — 's' writes the file".to_string()
+            "element deleted — 'Ctrl+S' writes the file".to_string()
         };
     }
 
@@ -6118,7 +6118,7 @@ impl App {
         self.mode = Mode::Browse;
         self.dirty = true;
         self.rebuild();
-        self.status = "value updated — 's' writes the file".to_string();
+        self.status = "value updated — 'Ctrl+S' writes the file".to_string();
     }
 
     /// Apply an `EditKind::Insert` edit: build the new element from the
@@ -6196,7 +6196,7 @@ impl App {
             self.select(i);
         }
         self.status = format!(
-            "inserted {} — 's' writes the file",
+            "inserted {} — 'Ctrl+S' writes the file",
             ber::type_name_of(class, tag)
         );
     }
