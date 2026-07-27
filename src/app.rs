@@ -4935,6 +4935,21 @@ impl App {
     /// Esc in the filter field: clear the filter and show the full tree —
     /// and, for a browser search, the full file list — again.
     pub fn filter_clear(&mut self) {
+        // Keep the element chosen under the filter selected once the full
+        // tree returns. Remember it by path (the index into `rows` is about to
+        // mean a different element) and expand any collapsed ancestors the
+        // filter had seen through, so it stays a visible row.
+        let keep = self
+            .rows
+            .get(self.selected)
+            .filter(|r| !r.elided)
+            .map(|r| (r.source, r.path.clone()));
+        if let Some((source, path)) = &keep {
+            if let Some(roots) = self.forest_mut(*source) {
+                expand_ancestors(roots, path);
+            }
+        }
+
         self.filter.clear();
         self.filter_cursor = 0;
         if self.filter_global {
@@ -4943,7 +4958,32 @@ impl App {
         }
         self.mode = Mode::Browse;
         self.rebuild_rows();
+        if let Some((source, path)) = keep {
+            if let Some(idx) = self
+                .rows
+                .iter()
+                .position(|r| !r.elided && r.source == source && r.path == path)
+            {
+                self.selected = idx;
+                self.tree_state.select(Some(idx));
+            }
+        }
         self.status = "filter cleared".to_string();
+    }
+
+    /// The mutable node forest backing a given row source, when it exists.
+    fn forest_mut(&mut self, source: RowSource) -> Option<&mut [Node]> {
+        match source {
+            RowSource::Document => Some(self.roots.as_mut_slice()),
+            RowSource::Decrypted => self.decrypted.as_mut().map(|d| d.roots.as_mut_slice()),
+            RowSource::Pkcs12Revealed(idx) => self
+                .pkcs12
+                .as_mut()
+                .and_then(|p| p.regions.get_mut(idx))
+                .map(|r| r.roots.as_mut_slice()),
+            RowSource::CmsRevealed => self.cms_reveal.as_mut().map(|c| c.roots.as_mut_slice()),
+            RowSource::DecryptedPlaceholder => None,
+        }
     }
 
     fn identify(&mut self) {
@@ -7155,6 +7195,19 @@ pub fn node_at_mut<'a>(roots: &'a mut [Node], path: &[usize]) -> Option<&'a mut 
     Some(node)
 }
 
+/// Expand every ancestor of `path` so the addressed node shows as a row in
+/// the unfiltered tree. The filter reveals matches regardless of fold state,
+/// so an element selected under the filter can sit inside a collapsed
+/// ancestor; expanding the chain keeps it visible once the filter is gone.
+fn expand_ancestors(roots: &mut [Node], path: &[usize]) {
+    let mut nodes: &mut [Node] = roots;
+    for &i in &path[..path.len().saturating_sub(1)] {
+        let Some(node) = nodes.get_mut(i) else { return };
+        node.expanded = true;
+        nodes = node.children.as_mut_slice();
+    }
+}
+
 /// Carry the expand/collapse state over to a freshly parsed tree with the
 /// same (or locally changed) structure.
 fn copy_expanded(old: &[Node], new: &mut [Node]) {
@@ -7859,6 +7912,57 @@ mod tests {
         assert!(matches!(app.mode, Mode::Browse));
         assert!(app.filter.is_empty());
         assert_eq!(app.rows.len(), 4);
+    }
+
+    #[test]
+    fn clearing_the_filter_keeps_the_selected_element() {
+        let mut app = test_app(&FILTER_DOC);
+        // Narrow to the OID (the last child) and select it under the filter,
+        // where it sits at row index 2 rather than its full-tree index 3.
+        app.start_filter();
+        for c in "commonname".chars() {
+            app.filter_insert_char(c);
+        }
+        assert_eq!(
+            doc_rows(&app),
+            [(vec![0], false), (vec![0, 0], true), (vec![0, 2], false)]
+        );
+        app.filter_accept();
+        app.select(2);
+        assert_eq!(app.selected_node().unwrap().tag, ber::TAG_OID);
+
+        // Clearing must keep the OID selected, not the element that now
+        // occupies the old row index (the string at [0, 1]).
+        app.start_filter();
+        app.filter_clear();
+        assert_eq!(app.rows.len(), 4);
+        assert_eq!(app.rows[app.selected].path, vec![0, 2]);
+        assert_eq!(app.selected_node().unwrap().tag, ber::TAG_OID);
+    }
+
+    #[test]
+    fn clearing_the_filter_reveals_a_kept_element_inside_a_collapsed_parent() {
+        let mut app = test_app(&FILTER_DOC);
+        // Collapse the root: in the plain tree only that one row shows.
+        app.roots[0].expanded = false;
+        app.rebuild_rows();
+        assert_eq!(app.rows.len(), 1);
+
+        // The filter sees through the fold; select the matching OID under it.
+        app.start_filter();
+        for c in "commonname".chars() {
+            app.filter_insert_char(c);
+        }
+        app.filter_accept();
+        app.select(app.rows.iter().position(|r| r.path == vec![0, 2]).unwrap());
+
+        // Clearing keeps the OID selected and re-expands its parent so the
+        // element is a visible row again, rather than snapping to the root.
+        app.start_filter();
+        app.filter_clear();
+        assert!(app.roots[0].expanded, "parent re-expanded to keep the selection visible");
+        assert_eq!(app.rows[app.selected].path, vec![0, 2]);
+        assert_eq!(app.selected_node().unwrap().tag, ber::TAG_OID);
     }
 
     #[test]
