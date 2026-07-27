@@ -145,12 +145,19 @@ jobs:
           # The XMSS backend links Botan, compiled from source by the `botan`
           # crate's `vendored` feature. botan-src's build script invokes
           # `python3` and GNU `make` unconditionally (even under MSVC), but
-          # Windows CPython ships only `python.exe` and the runner has no GNU
-          # make. Create a `python3` shim next to python.exe (both its dir and
-          # Chocolatey's bin are already on PATH) and install make. cl.exe
-          # comes from the MSVC step above; Botan's Makefile drives it.
-          $python = (Get-Command python).Source
-          Copy-Item $python (Join-Path (Split-Path $python) "python3.exe") -Force
+          # the runner has no GNU make. Install make. cl.exe comes from the
+          # MSVC step above; Botan's Makefile drives it.
+          #
+          # `python3` must also resolve. Newer runner images already ship a
+          # `python3.exe` alongside `python.exe` (a link back to it), in which
+          # case copying python.exe over it fails with "cannot overwrite with
+          # itself" — so only create the shim when python3 is missing.
+          if (Get-Command python3 -ErrorAction SilentlyContinue) {
+            Write-Host "python3 already available: $((Get-Command python3).Source)"
+          } else {
+            $python = (Get-Command python).Source
+            Copy-Item $python (Join-Path (Split-Path $python) "python3.exe") -Force
+          }
           choco install make --no-progress --yes
 
       - name: Cache static OpenSSL
