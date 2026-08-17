@@ -18,6 +18,12 @@ use std::process::ExitCode;
 use crex::{app::App, ber, dump, input, spec, tui};
 
 const USAGE: &str = "\
+(C) MTG AG
+MTG – Enterprise Resource Security
+Mastering Cryptographic Key Lifecycles
+www.mtg.de
+crex is published under the Apache License, Version 2.0
+
 Usage: crex [OPTIONS] <FILE|DIR>
 
 TUI ASN.1 (BER/DER) viewer and editor. Accepts raw DER/BER, PEM,

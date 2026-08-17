@@ -1244,6 +1244,12 @@ pub const HELP_TOPICS: &[HelpTopic] = &[
     HelpTopic {
         title: "Overview",
         body: &[
+            "(C) MTG AG",
+            "MTG – Enterprise Resource Security",
+            "Mastering Cryptographic Key Lifecycles",
+            "www.mtg.de",
+            "crex is published under the Apache License, Version 2.0",
+            "",
             "crex shows a BER/DER encoding as a tree, explains each element, and lets \
              you change it — down to individual content octets — and write the result back.",
             "",

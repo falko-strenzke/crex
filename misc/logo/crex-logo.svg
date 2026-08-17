@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- crex logo, proposal C "key crake": a geometric corn crake (Crex crex)
+       perched on a key, carrying a budding twig (the parse tree) in its bill.
+       Colors from the mtg.de palette. Light-ground variant. -->
+  <!-- bird: angular silhouette, red eye dot, legs -->
+  <g transform="translate(28,32) scale(0.62)">
+    <path d="M14 46 L30 40 L36 28 L50 30 L58 40 L78 42 L92 34 L86 52 L80 66 L62 76 L44 72 L34 60 L30 46 Z"
+          fill="none" stroke="#094064" stroke-width="5" stroke-linejoin="round"/>
+    <circle cx="39" cy="37" r="3" fill="#cc4c48"/>
+    <g stroke="#094064" stroke-width="5" stroke-linecap="round">
+      <line x1="54" y1="75" x2="54" y2="92"/>
+      <line x1="66" y1="74" x2="66" y2="92"/>
+      <line x1="54" y1="92" x2="46" y2="92"/>
+      <line x1="66" y1="92" x2="58" y2="92"/>
+    </g>
+  </g>
+  <!-- twig held at its root; three budding branches with square nodes -->
+  <g stroke="#005a83" stroke-width="2.5" stroke-linecap="round">
+    <line x1="37" y1="60" x2="25" y2="53"/>
+    <line x1="25" y1="53" x2="16" y2="44"/>
+    <line x1="25" y1="53" x2="12" y2="54"/>
+    <line x1="25" y1="53" x2="18" y2="63"/>
+  </g>
+  <g fill="#a5c5e0" stroke="#005a83" stroke-width="2">
+    <rect x="13.5" y="41.5" width="5" height="5"/>
+    <rect x="9.5" y="51.5" width="5" height="5"/>
+    <rect x="15.5" y="60.5" width="5" height="5"/>
+  </g>
+  <!-- key -->
+  <g stroke="#005a83" stroke-width="3.5" stroke-linecap="round" fill="none">
+    <circle cx="24" cy="90" r="9"/>
+    <line x1="33" y1="90" x2="104" y2="90"/>
+    <line x1="90" y1="90" x2="90" y2="99"/>
+    <line x1="99" y1="90" x2="99" y2="96"/>
+  </g>
+  <circle cx="24" cy="90" r="3" fill="#005a83"/>
+</svg>

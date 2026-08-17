@@ -6,6 +6,26 @@ as a foldable tree in the left pane; the right pane shows the selected
 element's decoded value and a hex dump of its content octets, which can be
 edited in place.
 
+Besides being a generic ASN.1/DER editor, the main functionality of crex is editing and viewing cryptographic file files individually. Support for making changes that affect multiple objects in the opened directory are supported. This is an overview of its most important features:
+
+- Generic ASN.1/DER (PEM or binary) viewing and editing
+  - Content search function
+- X.509 certificates and CRLs:
+  - Issuer-Subject relations visualized in the file tree panel (after marking root certificates as trusted)
+  - Semantic-aware editing of the content of various certificate fields
+  - Re-signing: A certificate can be edited and efficiently re-signed if the certificate's issuer's signing key is available
+  - Re-keying: A certificate's public key algorithm can be modified and the known objects (certificates, CRLs, CMS messages) issued by that certificate can be automatically re-signed
+- CMS signed and encrypted data
+- PKCS#8 and PKCS#12 private key files:
+  - Decrypt and show decrypted data in the ASN.1 tree
+  - Use unlocked keys for object re-signing
+- Public-key cryptographic algorithm support:
+  - traditional: RSA, ECDSA, Ed25519
+  - PQC:
+    - ML-DSA, SLH-DSA
+    - experimental support for XMSS and LMS: neither of the current crypto-backends supports certificates with these algorithms properly (OpenSSL 3.6: not at all, Botan 3.12: has bugs related to certificate path validation with these algorithms)
+
+
 ## The name
 
 **crex** — pronounced *c-rex* or *krex* — is a blend of **cr**ypto and
