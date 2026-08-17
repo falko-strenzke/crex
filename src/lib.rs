@@ -1,4 +1,4 @@
-// Copyright 2026 Falko Strenzke
+// Copyright 2026 Falko Strenzke, MTG AG
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 
 //! ASN.1 (BER/DER) viewer and editor library.
 //!
-//! The binary target (`asn1-editor`) provides a ratatui-based TUI; the
+//! The binary target (`crex`) provides a ratatui-based TUI; the
 //! library exposes the parser, encoder and dump formatter so that they can
 //! be exercised from integration tests (in particular the dumpasn1
 //! compatibility test).

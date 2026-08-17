@@ -1,4 +1,4 @@
-// Copyright 2026 Falko Strenzke
+// Copyright 2026 Falko Strenzke, MTG AG
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -4323,7 +4323,7 @@ mod tests {
     fn browser_search_bar_spans_and_narrows_the_file_list() {
         use ratatui::{backend::TestBackend, Terminal};
         let dir = std::env::temp_dir()
-            .join(format!("asn1-editor-tui-search-{}", std::process::id()));
+            .join(format!("crex-tui-search-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         // match.der contains the UTF8String "hello"; other.der does not.
@@ -4816,7 +4816,7 @@ mod tests {
             assert!(text.contains(topic.title), "topic {:?} missing:\n{text}", topic.title);
         }
         // …and the first one's text is on the right.
-        assert!(text.contains("asn1-editor shows a BER/DER encoding as a tree"), "{text}");
+        assert!(text.contains("crex shows a BER/DER encoding as a tree"), "{text}");
 
         // ↓ picks the next topic and starts its text at the top again.
         handle_help_key(&mut app, key(KeyCode::PageDown));

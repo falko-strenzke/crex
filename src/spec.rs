@@ -1,4 +1,4 @@
-// Copyright 2026 Falko Strenzke
+// Copyright 2026 Falko Strenzke, MTG AG
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -555,10 +555,10 @@ pub fn load_dir(dir: &Path) -> (SpecDb, Vec<String>) {
     (db, errors)
 }
 
-/// Find the specs directory: $ASN1_EDITOR_SPECS, ./specs/asn1, or
+/// Find the specs directory: $CREX_SPECS, ./specs/asn1, or
 /// specs/asn1 next to the executable's ancestor directories.
 pub fn default_spec_dir() -> Option<std::path::PathBuf> {
-    if let Ok(dir) = std::env::var("ASN1_EDITOR_SPECS") {
+    if let Ok(dir) = std::env::var("CREX_SPECS") {
         return Some(std::path::PathBuf::from(dir));
     }
     let cwd_specs = Path::new("specs/asn1");

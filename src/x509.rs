@@ -1,4 +1,4 @@
-// Copyright 2026 Falko Strenzke
+// Copyright 2026 Falko Strenzke, MTG AG
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -1045,7 +1045,7 @@ mod tests {
     use super::*;
 
     fn tmp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("asn1-editor-x509-test-{}-{}", name, std::process::id()));
+        let dir = std::env::temp_dir().join(format!("crex-x509-test-{}-{}", name, std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -1143,6 +1143,8 @@ mod tests {
         // attribute and the attached content are all present.
         assert!(cms.signed_attrs.as_ref().is_some_and(|s| s[0] == 0x31));
         assert_eq!(cms.message_digest.as_ref().map(|d| d.len()), Some(32));
+        // Literal payload baked into the binary fixture testdata/cms_signed.der;
+        // it predates the rename to "crex" and must match the fixture bytes.
         assert!(cms
             .econtent
             .as_deref()

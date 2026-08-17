@@ -1,4 +1,4 @@
-// Copyright 2026 Falko Strenzke
+// Copyright 2026 Falko Strenzke, MTG AG
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -1244,7 +1244,7 @@ pub const HELP_TOPICS: &[HelpTopic] = &[
     HelpTopic {
         title: "Overview",
         body: &[
-            "asn1-editor shows a BER/DER encoding as a tree, explains each element, and lets \
+            "crex shows a BER/DER encoding as a tree, explains each element, and lets \
              you change it — down to individual content octets — and write the result back.",
             "",
             "It reads raw DER/BER, PEM, base64 and hex input. The container is remembered, so \
@@ -8039,7 +8039,7 @@ mod tests {
     /// (no match) and `sub/inner.der` (contains "hello").
     fn search_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir()
-            .join(format!("asn1-editor-search-test-{}-{}", name, std::process::id()));
+            .join(format!("crex-search-test-{}-{}", name, std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("sub")).unwrap();
         std::fs::write(dir.join("match.der"), FILTER_DOC).unwrap();
@@ -9860,7 +9860,7 @@ mod tests {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
         let dir = std::env::temp_dir().join(format!(
-            "asn1-editor-app-test-{}-{}-{}",
+            "crex-app-test-{}-{}-{}",
             name,
             std::process::id(),
             unique

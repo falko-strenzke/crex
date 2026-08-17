@@ -1,8 +1,8 @@
-# asn1-editor — Design Document
+# crex — Design Document
 
 ## 1. Overview and goals
 
-`asn1-editor` is a terminal (TUI) viewer **and editor** for ASN.1 BER/DER
+`crex` is a terminal (TUI) viewer **and editor** for ASN.1 BER/DER
 encoded files, written in Rust using the [ratatui](https://ratatui.rs)
 framework. It is inspired by
 [SergZen/asn1_viewer](https://github.com/SergZen/asn1_viewer) but differs in
@@ -461,7 +461,7 @@ shared type — it doesn't; it only references `AlgorithmIdentifier`, and
 equally-good *matches* wins is a separate, source-ordered rule (§ below):
 that is how the newer RFC 5958 interpretation is preferred over RFC 5208
 for a document both describe. The directory is located via
-`$ASN1_EDITOR_SPECS`, then `./specs/asn1`, then `specs/asn1` next to an
+`$CREX_SPECS`, then `./specs/asn1`, then `specs/asn1` next to an
 ancestor of the executable.
 
 ### The specification parser

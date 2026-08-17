@@ -1,4 +1,4 @@
-// Copyright 2026 Falko Strenzke
+// Copyright 2026 Falko Strenzke, MTG AG
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,10 +15,10 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use asn1_editor::{app::App, ber, dump, input, spec, tui};
+use crex::{app::App, ber, dump, input, spec, tui};
 
 const USAGE: &str = "\
-Usage: asn1-editor [OPTIONS] <FILE|DIR>
+Usage: crex [OPTIONS] <FILE|DIR>
 
 TUI ASN.1 (BER/DER) viewer and editor. Accepts raw DER/BER, PEM,
 base64 and hex input files.

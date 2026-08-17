@@ -1,4 +1,4 @@
-// Copyright 2026 Falko Strenzke
+// Copyright 2026 Falko Strenzke, MTG AG
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use asn1_editor::{ber, dump};
+use crex::{ber, dump};
 
 /// Type names as printed by both tools; used to cut value text off a line.
 const TYPE_NAMES: &[&str] = &[

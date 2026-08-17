@@ -1,9 +1,9 @@
-// Copyright 2026 Falko Strenzke
+// Copyright 2026 Falko Strenzke, MTG AG
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 
-use asn1_editor::{ber, input, oid};
+use crex::{ber, input, oid};
 use std::path::{Path, PathBuf};
 
 fn files_below(dir: &Path, out: &mut Vec<PathBuf>) {

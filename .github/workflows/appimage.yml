@@ -71,14 +71,14 @@ jobs:
 
       - name: Assemble AppDir
         run: |
-          APPDIR="$RUNNER_TEMP/asn1-editor.AppDir"
-          install -Dm755 "target/$LINUX_TARGET/release/asn1-editor" "$APPDIR/usr/bin/asn1-editor"
+          APPDIR="$RUNNER_TEMP/crex.AppDir"
+          install -Dm755 "target/$LINUX_TARGET/release/crex" "$APPDIR/usr/bin/crex"
           install -Dm755 packaging/appimage/AppRun "$APPDIR/AppRun"
-          install -Dm644 packaging/appimage/asn1-editor.desktop "$APPDIR/asn1-editor.desktop"
-          install -Dm644 packaging/appimage/asn1-editor.svg "$APPDIR/asn1-editor.svg"
-          ln -s asn1-editor.svg "$APPDIR/.DirIcon"
-          mkdir -p "$APPDIR/usr/share/asn1-editor/specs"
-          cp -a specs/asn1 "$APPDIR/usr/share/asn1-editor/specs/"
+          install -Dm644 packaging/appimage/crex.desktop "$APPDIR/crex.desktop"
+          install -Dm644 packaging/appimage/crex.svg "$APPDIR/crex.svg"
+          ln -s crex.svg "$APPDIR/.DirIcon"
+          mkdir -p "$APPDIR/usr/share/crex/specs"
+          cp -a specs/asn1 "$APPDIR/usr/share/crex/specs/"
 
       - name: Build AppImage
         id: package
@@ -93,10 +93,10 @@ jobs:
           chmod +x "$APPIMAGETOOL"
 
           VERSION="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
-          OUTPUT="asn1-editor-${VERSION}-x86_64.AppImage"
+          OUTPUT="crex-${VERSION}-x86_64.AppImage"
           ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 \
             "$APPIMAGETOOL" --runtime-file "$RUNTIME" \
-            "$RUNNER_TEMP/asn1-editor.AppDir" "$OUTPUT"
+            "$RUNNER_TEMP/crex.AppDir" "$OUTPUT"
           echo "path=$OUTPUT" >> "$GITHUB_OUTPUT"
 
       - name: Smoke-test AppImage
@@ -107,7 +107,7 @@ jobs:
       - name: Upload AppImage
         uses: actions/upload-artifact@v6
         with:
-          name: asn1-editor-linux-x86_64
+          name: crex-linux-x86_64
           path: ${{ steps.package.outputs.path }}
           if-no-files-found: error
           compression-level: 0
@@ -206,18 +206,18 @@ jobs:
         run: |
           $metadata = cargo metadata --no-deps --format-version 1 | ConvertFrom-Json
           $version = $metadata.packages[0].version
-          $packageDir = Join-Path $env:RUNNER_TEMP "asn1-editor-windows-x86_64"
+          $packageDir = Join-Path $env:RUNNER_TEMP "crex-windows-x86_64"
           $specDir = Join-Path $packageDir "specs/asn1"
-          $output = Join-Path $env:GITHUB_WORKSPACE "asn1-editor-$version-windows-x86_64.zip"
+          $output = Join-Path $env:GITHUB_WORKSPACE "crex-$version-windows-x86_64.zip"
 
           New-Item -ItemType Directory -Force -Path $specDir | Out-Null
-          Copy-Item "target/$env:WINDOWS_TARGET/release/asn1-editor.exe" $packageDir
+          Copy-Item "target/$env:WINDOWS_TARGET/release/crex.exe" $packageDir
           Copy-Item "specs/asn1/*" $specDir -Recurse
 
           $testFile = (Resolve-Path "testdata/cert_rsa.der").Path
           Push-Location $packageDir
           try {
-            & ./asn1-editor.exe --dump $testFile | Out-Null
+            & ./crex.exe --dump $testFile | Out-Null
             if ($LASTEXITCODE -ne 0) {
               throw "Windows executable smoke test failed with exit code $LASTEXITCODE"
             }
@@ -231,7 +231,7 @@ jobs:
       - name: Upload Windows application
         uses: actions/upload-artifact@v6
         with:
-          name: asn1-editor-windows-x86_64
+          name: crex-windows-x86_64
           path: ${{ steps.package.outputs.path }}
           if-no-files-found: error
           compression-level: 0
@@ -248,13 +248,13 @@ jobs:
       - name: Download AppImage artifact
         uses: actions/download-artifact@v7
         with:
-          name: asn1-editor-linux-x86_64
+          name: crex-linux-x86_64
           path: dist
 
       - name: Download Windows artifact
         uses: actions/download-artifact@v7
         with:
-          name: asn1-editor-windows-x86_64
+          name: crex-windows-x86_64
           path: dist
 
       - name: Create GitHub Release

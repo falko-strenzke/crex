@@ -1,10 +1,17 @@
-# asn1-editor
+# crex
 
 A terminal (TUI) viewer **and editor** for ASN.1 BER/DER files, written in
 Rust with [ratatui](https://ratatui.rs). The nested ASN.1 structure is shown
 as a foldable tree in the left pane; the right pane shows the selected
 element's decoded value and a hex dump of its content octets, which can be
 edited in place.
+
+## The name
+
+**crex** — pronounced *c-rex* or *krex* — is a blend of **cr**ypto and
+l**ex**er: it parses and edits cryptographic object structures (currently
+ASN.1/DER). *Crex crex* is also the scientific name of the corn crake, a bird
+([Wachtelkönig](https://de.wikipedia.org/wiki/Wachtelk%C3%B6nig)).
 
 The parser's structural output (offsets, lengths, type names, including the
 "encapsulated ASN.1 inside OCTET STRING / BIT STRING" heuristic) replicates
@@ -14,7 +21,7 @@ test suite. See [DESIGN.md](DESIGN.md) for the full design.
 ## Build
 
 ```sh
-cargo build --release        # binary in target/release/asn1-editor
+cargo build --release        # binary in target/release/crex
 cargo test                   # includes the dumpasn1 comparison if installed
 ```
 
@@ -39,7 +46,7 @@ cd openssl-3.6.0
 ./Configure --prefix="$HOME/.local/openssl-3.6-lms" --libdir=lib enable-lms no-shared no-docs
 make -j"$(nproc)" && make install_sw && cd ..
 
-# Then build/test asn1-editor against it:
+# Then build/test crex against it:
 export OPENSSL_DIR="$HOME/.local/openssl-3.6-lms"
 export OPENSSL_STATIC=1
 cargo build --release
@@ -53,9 +60,9 @@ HSS is verified by Botan and is unaffected).
 ## Usage
 
 ```sh
-asn1-editor cert.der             # open the TUI (edits overwrite cert.der on 's')
-asn1-editor -o out.der cert.der  # save edits to out.der instead
-asn1-editor --dump cert.der      # dumpasn1-style dump to stdout, no TUI
+crex cert.der             # open the TUI (edits overwrite cert.der on Ctrl+S)
+crex -o out.der cert.der  # save edits to out.der instead
+crex --dump cert.der      # dumpasn1-style dump to stdout, no TUI
 ```
 
 Input may be raw BER/DER, PEM, bare base64, or hex text; saving re-wraps
@@ -82,7 +89,7 @@ The content pane shows the selected element's spec name on a `Spec` line,
 and the identified document type appears in the tree title. Additional
 specification files dropped into `specs/asn1/` are picked up
 automatically (the directory is looked up next to the executable, in the
-current directory, or via `$ASN1_EDITOR_SPECS`).
+current directory, or via `$CREX_SPECS`).
 
 ## Keys
 
@@ -97,7 +104,7 @@ current directory, or via `$ASN1_EDITOR_SPECS`).
 | `d` `d` | delete the selected element (press twice to confirm) |
 | `J` / `K` | move the selected element down / up among its siblings |
 | `Enter` / `Esc` | apply / cancel the edit |
-| `s` | save |
+| `Ctrl+S` | save |
 | `z` | decrypt a supported encrypted PKCS#8 key and show its virtual plaintext tree |
 | `[` / `]` | scroll the content pane |
 | `q` | quit (`q q` discards unsaved changes) |

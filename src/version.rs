@@ -1,4 +1,4 @@
-// Copyright 2026 Falko Strenzke
+// Copyright 2026 Falko Strenzke, MTG AG
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -72,7 +72,7 @@ fn id(tag: &str, commit: &str, modified: &str) -> String {
 }
 
 fn description(tag: &str, commit: &str, modified: &str) -> Vec<String> {
-    let mut lines = vec![format!("asn1-editor {}", id(tag, commit, modified)), String::new()];
+    let mut lines = vec![format!("crex {}", id(tag, commit, modified)), String::new()];
     if official(tag, modified) {
         lines.push(format!(
             "This is an official build: it was made from the tagged release {}, so the \
