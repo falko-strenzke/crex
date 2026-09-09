@@ -24,7 +24,7 @@ history:
 - at: '2026-09-09T11:40:38Z'
   actor: system
   action: Prompt generated via /spec-kitty.tasks
-agent_profile: python-pedro
+agent_profile: implementer-ivan
 authoritative_surface: src/keymap.rs
 create_intent:
 - src/keymap.rs
@@ -44,7 +44,7 @@ tracker_refs: []
 
 Use the `/ad-hoc-profile-load` skill to load the agent profile specified in the frontmatter (or any user-defined profile), and behave according to its guidance before parsing the rest of this prompt.
 
-- **Profile**: `rust-implementer` (no dedicated Rust profile is registered in this project; use the closest general implementer profile available, e.g. `implementer-ivan`)
+- **Profile**: `implementer-ivan` (no dedicated Rust profile is registered in this project; this is the closest general implementer profile)
 - **Role**: `implementer`
 - **Agent/tool**: `claude`
 
