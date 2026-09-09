@@ -1,4 +1,16 @@
 {
+  "acceptance_history": [
+    {
+      "acceptance_mode": "pr",
+      "accepted_at": "2026-09-09T14:25:44.814427+00:00",
+      "accepted_by": "fstrenzke",
+      "accepted_from_commit": "7f71cf5947fe230c76ea54751cde164e7fd2d0fe"
+    }
+  ],
+  "acceptance_mode": "pr",
+  "accepted_at": "2026-09-09T14:25:44.814427+00:00",
+  "accepted_by": "fstrenzke",
+  "accepted_from_commit": "7f71cf5947fe230c76ea54751cde164e7fd2d0fe",
   "coordination_branch": "kitty/mission-asn1-tree-delete-copy-paste-01M22R1E",
   "created_at": "2026-09-09T09:30:01.496567+00:00",
   "flattened": false,
