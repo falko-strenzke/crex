@@ -16,7 +16,7 @@ values).
 
 ## TreeAction and EditorAction (`src/keymap.rs`)
 
-`TreeAction`: MarkUp, MarkDown, Delete, Cut, Copy, Yank, PasteAfter,
+`TreeAction`: MarkUp, MarkDown, Delete, Cut, Copy, PasteAfter,
 PasteBefore, PasteAsChild (menu-only; no key in either set), plus the
 existing navigation/edit actions if the layer is extended to them.
 
@@ -27,7 +27,10 @@ Decrement, Apply, Cancel, LeaveMode.
 
 Invariants: `translate(key, Vim, _)` never returns an action for
 CONTROL+{c,v,x,z}; `label(action, set)` returns `None` for actions with no
-key in that set (rendered as "menu only").
+key in that set (rendered as "menu only"). There is no separate `Yank`
+`TreeAction` — vim's `y` and normal's Ctrl+C both translate to
+`TreeAction::Copy`; the clipboard-vs-buffer-only distinction is `App`'s
+job (via `App.bindings`), not the keymap's.
 
 ## Mark (`src/app.rs`)
 

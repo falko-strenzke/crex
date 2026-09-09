@@ -161,7 +161,7 @@ stateDiagram-v2
 
 - **Purpose**: Turn the operand into DER bytes once and share them between the clipboard and the in-app buffer; extend the two-step delete to ranges.
 - **Relevant requirements**: FR-006..FR-010, FR-020, FR-026, NFR-003
-- **Affected surfaces**: `src/app.rs` (`element_buffer: Option<Vec<u8>>`, `delete_operand()` replacing the body of `delete_selected`, `copy_operand()`, `cut_operand()`, `yank_operand()`), `src/clipboard.rs` (`write` reuse)
+- **Affected surfaces**: `src/app.rs` (`element_buffer: Option<ElementBuffer>`, `delete_operand()` replacing the body of `delete_selected`, `copy_operand()`, `cut_operand()`, `yank_operand()`), `src/clipboard.rs` (`write` reuse)
 - **Sequencing/depends-on**: IC-03
 - **Risks**: Deleting a range must remove indices from high to low; cut must copy before removing and abort when neither destination accepted the data. Confirmation text must state the element count. Cursor placement rule (FR-008) shared by delete and cut.
 

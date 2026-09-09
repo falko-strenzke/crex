@@ -142,7 +142,7 @@ T017 Define `ElementBuffer` struct in new `src/buffer.rs`
 T018 Implement `delete_operand()` in `src/buffer.rs` (`impl App`), replacing `delete_selected`'s body: multi-row two-step confirm, high-to-low removal, cursor-placement rule (FR-008)
 T019 Implement `copy_operand()`: `ber::encode_forest` of the operand into the buffer, `clipboard::write` for normal bindings, clipboard-failure status wording
 T020 Implement `cut_operand()` and `yank_operand()`: copy-then-delete without re-confirmation (abort with no change if neither destination received the data); yank fills the buffer only
-T021 Wire `TreeAction::Delete/Cut/Copy/Yank` dispatch in `src/tui.rs`'s `handle_document_key`
+T021 Wire `TreeAction::Delete/Cut/Copy` dispatch in `src/tui.rs`'s `handle_document_key` (vim's `y` also translates to `Copy`, not a separate `Yank` action)
 T022 Unit tests: range delete + cursor placement (FR-008); copy fills both destinations; copy survives clipboard failure; cut aborts on total copy failure; yank is buffer-only
 
 ### Implementation Notes
@@ -416,7 +416,7 @@ T045 (README) is independent of T043/T044/T046 and can be done alongside them.
 | T018 | Implement delete_operand() | WP04 | P0 | No |
 | T019 | Implement copy_operand() | WP04 | P0 | No |
 | T020 | Implement cut_operand()/yank_operand() | WP04 | P0 | No |
-| T021 | Wire Delete/Cut/Copy/Yank dispatch | WP04 | P0 | No |
+| T021 | Wire Delete/Cut/Copy dispatch | WP04 | P0 | No |
 | T022 | Unit tests: delete/copy/cut/yank | WP04 | P0 | No |
 | T023 | Implement clipboard::bytes_for_paste() | WP05 | P0 | No |
 | T024 | Add PasteKind::Pem variant | WP05 | P0 | No |
