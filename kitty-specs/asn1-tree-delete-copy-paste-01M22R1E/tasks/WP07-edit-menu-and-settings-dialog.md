@@ -1,7 +1,7 @@
 ---
 work_package_id: WP07
 title: Edit menu, File ▸ Settings entry and dialogs
-dependencies: []
+dependencies: ["WP02", "WP04", "WP06", "WP08"]
 requirement_refs:
 - FR-014
 - FR-021

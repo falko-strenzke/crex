@@ -1,7 +1,7 @@
 ---
 work_package_id: WP09
 title: Documentation and documentation tests
-dependencies: []
+dependencies: ["WP03", "WP04", "WP06", "WP07", "WP08"]
 requirement_refs:
 - FR-032
 - NFR-005

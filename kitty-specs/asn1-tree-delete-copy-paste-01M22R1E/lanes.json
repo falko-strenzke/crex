@@ -22,6 +22,20 @@
       "parallel_group": 0
     },
     {
+      "lane_id": "lane-e",
+      "wp_ids": [
+        "WP05"
+      ],
+      "write_scope": [
+        "src/clipboard.rs"
+      ],
+      "predicted_surfaces": [
+        "api"
+      ],
+      "depends_on_lanes": [],
+      "parallel_group": 0
+    },
+    {
       "lane_id": "lane-b",
       "wp_ids": [
         "WP02"
@@ -34,8 +48,10 @@
         "artifact-rendering",
         "legacy-cleanup"
       ],
-      "depends_on_lanes": [],
-      "parallel_group": 0
+      "depends_on_lanes": [
+        "lane-a"
+      ],
+      "parallel_group": 1
     },
     {
       "lane_id": "lane-c",
@@ -51,8 +67,10 @@
         "artifact-rendering",
         "tests"
       ],
-      "depends_on_lanes": [],
-      "parallel_group": 0
+      "depends_on_lanes": [
+        "lane-a"
+      ],
+      "parallel_group": 1
     },
     {
       "lane_id": "lane-d",
@@ -66,22 +84,10 @@
         "api",
         "legacy-cleanup"
       ],
-      "depends_on_lanes": [],
-      "parallel_group": 0
-    },
-    {
-      "lane_id": "lane-e",
-      "wp_ids": [
-        "WP05"
+      "depends_on_lanes": [
+        "lane-c"
       ],
-      "write_scope": [
-        "src/clipboard.rs"
-      ],
-      "predicted_surfaces": [
-        "api"
-      ],
-      "depends_on_lanes": [],
-      "parallel_group": 0
+      "parallel_group": 2
     },
     {
       "lane_id": "lane-f",
@@ -95,8 +101,31 @@
         "api",
         "tests"
       ],
-      "depends_on_lanes": [],
-      "parallel_group": 0
+      "depends_on_lanes": [
+        "lane-d",
+        "lane-e"
+      ],
+      "parallel_group": 3
+    },
+    {
+      "lane_id": "lane-h",
+      "wp_ids": [
+        "WP08"
+      ],
+      "write_scope": [
+        "src/vim.rs"
+      ],
+      "predicted_surfaces": [
+        "api",
+        "app-shell",
+        "artifact-rendering"
+      ],
+      "depends_on_lanes": [
+        "lane-a",
+        "lane-b",
+        "lane-d"
+      ],
+      "parallel_group": 3
     },
     {
       "lane_id": "lane-g",
@@ -112,24 +141,13 @@
         "app-shell",
         "artifact-rendering"
       ],
-      "depends_on_lanes": [],
-      "parallel_group": 0
-    },
-    {
-      "lane_id": "lane-h",
-      "wp_ids": [
-        "WP08"
+      "depends_on_lanes": [
+        "lane-b",
+        "lane-d",
+        "lane-f",
+        "lane-h"
       ],
-      "write_scope": [
-        "src/vim.rs"
-      ],
-      "predicted_surfaces": [
-        "api",
-        "app-shell",
-        "artifact-rendering"
-      ],
-      "depends_on_lanes": [],
-      "parallel_group": 0
+      "parallel_group": 4
     },
     {
       "lane_id": "lane-i",
@@ -146,12 +164,18 @@
         "artifact-rendering",
         "legacy-cleanup"
       ],
-      "depends_on_lanes": [],
-      "parallel_group": 0
+      "depends_on_lanes": [
+        "lane-c",
+        "lane-d",
+        "lane-f",
+        "lane-g",
+        "lane-h"
+      ],
+      "parallel_group": 5
     }
   ],
-  "computed_at": "2026-09-09T11:59:11.223418+00:00",
+  "computed_at": "2026-09-09T12:00:09.165402+00:00",
   "computed_from": "dependency_graph+ownership",
   "planning_artifact_wps": [],
-  "planning_commit_sha": "63c30e2aee1f2b2b0bc38506cbc5816145d82b4b"
+  "planning_commit_sha": "957602ed256bc2bb355fd1d72ecdd1ab3a3a1db9"
 }

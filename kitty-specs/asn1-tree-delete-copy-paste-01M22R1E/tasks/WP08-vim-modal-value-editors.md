@@ -1,7 +1,7 @@
 ---
 work_package_id: WP08
 title: Vim modal value editors
-dependencies: []
+dependencies: ["WP01", "WP02", "WP04"]
 requirement_refs:
 - FR-028
 - FR-029

@@ -1,7 +1,7 @@
 ---
 work_package_id: WP02
 title: Settings persistence and start-up loading
-dependencies: []
+dependencies: ["WP01"]
 requirement_refs:
 - C-006
 - C-007

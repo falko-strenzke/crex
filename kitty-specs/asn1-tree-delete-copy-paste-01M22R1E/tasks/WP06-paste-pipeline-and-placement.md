@@ -1,7 +1,7 @@
 ---
 work_package_id: WP06
 title: Paste pipeline and placement
-dependencies: []
+dependencies: ["WP04", "WP05"]
 requirement_refs:
 - C-004
 - C-005

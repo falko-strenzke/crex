@@ -1,7 +1,7 @@
 ---
 work_package_id: WP04
 title: Element buffer, delete/cut/copy/yank of the operand
-dependencies: []
+dependencies: ["WP03"]
 requirement_refs:
 - FR-006
 - FR-007
