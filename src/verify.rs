@@ -72,8 +72,10 @@ fn is_hsslms(sig_alg: &[u64]) -> bool {
 
 /// Verify an HSS/LMS signature over `tbs` under the raw HSS public-key bytes
 /// `pubkey` (a `subjectPublicKey`, unused-bits octet stripped). A single-level
-/// key (HSS `L=1` ≡ plain LMS) is verified by OpenSSL 3.6's LMS implementation;
-/// a multi-level HSS key is verified by Botan (OpenSSL has no HSS support).
+/// key (HSS `L=1` ≡ plain LMS) is verified by OpenSSL 3.6's LMS implementation
+/// when the linked OpenSSL provides it (LMS is a compile-time option, off by
+/// default — see the README), falling back to Botan otherwise; a multi-level
+/// HSS key is always verified by Botan (OpenSSL has no HSS support).
 fn hsslms_verify(pubkey: &[u8], tbs: &[u8], signature: &[u8]) -> bool {
     match crate::hsslms::hss_levels(pubkey) {
         // Single level: strip the HSS framing (a 4-byte level count on the key,
@@ -83,7 +85,13 @@ fn hsslms_verify(pubkey: &[u8], tbs: &[u8], signature: &[u8]) -> bool {
             if pubkey.len() <= 4 || signature.len() < 4 {
                 return false;
             }
-            openssl_lms_verify(&pubkey[4..], tbs, &signature[4..])
+            match openssl_lms_verify(&pubkey[4..], tbs, &signature[4..]) {
+                Some(valid) => valid,
+                // This OpenSSL was built without LMS: Botan verifies the
+                // (single-level) HSS signature instead, so LMS certificates
+                // and re-signing still work — just not through OpenSSL.
+                None => crate::hsslms::verify(pubkey, tbs, signature),
+            }
         }
         Some(_) => crate::hsslms::verify(pubkey, tbs, signature),
         None => false,
@@ -95,7 +103,13 @@ fn hsslms_verify(pubkey: &[u8], tbs: &[u8], signature: &[u8]) -> bool {
 /// LMS public key via `EVP_PKEY_fromdata` and verifies with
 /// `EVP_PKEY_verify_message_init` + `EVP_PKEY_verify` — APIs the safe
 /// `openssl` crate does not wrap for LMS, so this drops to `openssl-sys`.
-fn openssl_lms_verify(lms_pubkey: &[u8], msg: &[u8], lms_sig: &[u8]) -> bool {
+///
+/// Returns `None` when the linked OpenSSL does not provide LMS at all (it is
+/// a compile-time option, off by default; the `LMS` key type / signature
+/// algorithm then cannot be fetched or fed key material), so the caller can
+/// fall back to another backend. `Some(false)` is a genuine verification
+/// failure.
+fn openssl_lms_verify(lms_pubkey: &[u8], msg: &[u8], lms_sig: &[u8]) -> Option<bool> {
     use std::ffi::c_void;
     use std::ptr;
 
@@ -118,7 +132,7 @@ fn openssl_lms_verify(lms_pubkey: &[u8], msg: &[u8], lms_sig: &[u8]) -> bool {
         let ctx =
             openssl_sys::EVP_PKEY_CTX_new_from_name(ptr::null_mut(), lms.as_ptr(), ptr::null());
         if ctx.is_null() {
-            return false;
+            return None; // no LMS key type in this OpenSSL
         }
         struct CtxGuard(*mut openssl_sys::EVP_PKEY_CTX);
         impl Drop for CtxGuard {
@@ -129,7 +143,7 @@ fn openssl_lms_verify(lms_pubkey: &[u8], msg: &[u8], lms_sig: &[u8]) -> bool {
         let _ctx = CtxGuard(ctx);
 
         if openssl_sys::EVP_PKEY_fromdata_init(ctx) <= 0 {
-            return false;
+            return None;
         }
         let mut params = [
             openssl_sys::OSSL_PARAM_construct_octet_string(
@@ -148,7 +162,7 @@ fn openssl_lms_verify(lms_pubkey: &[u8], msg: &[u8], lms_sig: &[u8]) -> bool {
         ) <= 0
             || pkey.is_null()
         {
-            return false;
+            return None; // LMS unsupported (or the key material is unusable)
         }
         struct PkeyGuard(*mut openssl_sys::EVP_PKEY);
         impl Drop for PkeyGuard {
@@ -160,7 +174,7 @@ fn openssl_lms_verify(lms_pubkey: &[u8], msg: &[u8], lms_sig: &[u8]) -> bool {
 
         let sig_alg = openssl_sys::EVP_SIGNATURE_fetch(ptr::null_mut(), lms.as_ptr(), ptr::null());
         if sig_alg.is_null() {
-            return false;
+            return None; // no LMS signature algorithm in this OpenSSL
         }
         struct SigGuard(*mut openssl_sys::EVP_SIGNATURE);
         impl Drop for SigGuard {
@@ -172,20 +186,21 @@ fn openssl_lms_verify(lms_pubkey: &[u8], msg: &[u8], lms_sig: &[u8]) -> bool {
 
         let vctx = EVP_PKEY_CTX_new_from_pkey(ptr::null_mut(), pkey, ptr::null());
         if vctx.is_null() {
-            return false;
+            return None;
         }
         let _vctx = CtxGuard(vctx);
 
         if openssl_sys::EVP_PKEY_verify_message_init(vctx, sig_alg, ptr::null()) <= 0 {
-            return false;
+            return None;
         }
-        openssl_sys::EVP_PKEY_verify(
+        let ok = openssl_sys::EVP_PKEY_verify(
             vctx,
             lms_sig.as_ptr(),
             lms_sig.len(),
             msg.as_ptr(),
             msg.len(),
-        ) == 1
+        ) == 1;
+        Some(ok)
     }
 }
 
@@ -1284,16 +1299,28 @@ mod tests {
             roots[0].children.last().unwrap().value[1..].to_vec()
         };
 
-        // Single-level LMS: verify_signature must route to OpenSSL and accept.
+        // Single-level LMS: verify_signature routes to OpenSSL and accepts —
+        // or, when this OpenSSL was built without LMS, falls back to Botan.
+        // Either way the signature must verify.
         let (lms_pkcs8, lms_spki) = hsslms::generate("SHA-256,HW(5,8)").unwrap();
         let (lms_sig, _) = sign_stateful(hsslms::HSS_LMS_OID, &lms_pkcs8, msg).unwrap();
         let lms_pub = spki_bits(&lms_spki);
         assert_eq!(hsslms::hss_levels(&lms_pub), Some(1));
         assert!(
             verify_signature(hsslms::HSS_LMS_OID, &lms_pub, msg, &lms_sig),
-            "single-level LMS must verify (via OpenSSL)"
+            "single-level LMS must verify (via OpenSSL, or Botan without OpenSSL LMS)"
         );
         assert!(!verify_signature(hsslms::HSS_LMS_OID, &lms_pub, b"x", &lms_sig));
+
+        // The OpenSSL path itself reports either a definite verdict or "LMS
+        // not available" — never a false rejection of a valid signature (which
+        // would deny the Botan fallback its turn). The HSS framing (4-byte
+        // level count / `Nspk`) is stripped for the plain LMS API.
+        let openssl = openssl_lms_verify(&lms_pub[4..], msg, &lms_sig[4..]);
+        assert_ne!(openssl, Some(false), "OpenSSL must not reject a valid LMS signature");
+        if openssl.is_some() {
+            assert_eq!(openssl_lms_verify(&lms_pub[4..], b"x", &lms_sig[4..]), Some(false));
+        }
 
         // Multi-level HSS: verify_signature must route to Botan and accept.
         let (hss_pkcs8, hss_spki) = hsslms::generate("SHA-256,HW(5,8),HW(5,8)").unwrap();

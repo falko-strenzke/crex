@@ -19,7 +19,9 @@
 //! key (an HSS tree of one level ≡ plain LMS) is verified by **OpenSSL** (3.6+,
 //! which implements LMS but not multi-level HSS), as the user requested, while
 //! a multi-level HSS key is verified by **Botan** here, since OpenSSL has no
-//! HSS support.
+//! HSS support. OpenSSL's LMS is a compile-time option (off by default, absent
+//! from typical distribution builds); when the linked OpenSSL lacks it, the
+//! single-level case falls back to [`verify`] here too.
 //!
 //! **OIDs.** Botan already emits the RFC 9802 / RFC 8708 OID
 //! [`HSS_LMS_OID`] (`1.2.840.113549.1.9.16.3.17`, `id-alg-hss-lms-hashsig`)

@@ -10584,6 +10584,101 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Re-key the chain's root to a stateful hash-based key the way the TUI
+    /// does it — directory mode, the certificate opened from the browser, a
+    /// plaintext (no password) key file — then check what the user sees
+    /// afterwards: the key↔certificate connection in the browser (from either
+    /// side) and a ready re-sign dialog, both before and after the periodic
+    /// filesystem refresh rescans the key files from disk.
+    fn stateful_rekey_links_and_resigns(
+        name: &str,
+        key_name: &str,
+        configure: impl FnOnce(&mut PubKeyState),
+    ) {
+        let dir = copy_chain(name);
+        let mut app = App::new_dir(dir.clone());
+        browser_select_by_name(&mut app, "root_ca.der");
+        app.activate_browser_entry();
+        app.start_rekey();
+        match app.mode {
+            Mode::EditPubKey(ref mut s) => {
+                configure(s);
+                s.filename = key_name.to_string();
+                s.filename_auto = false;
+            }
+            _ => panic!("no re-key dialog: {}", app.status),
+        }
+        app.submit_pubkey();
+        await_rekey(&mut app);
+        assert!(matches!(app.mode, Mode::Browse), "status: {}", app.status);
+        let key_path = dir.join(key_name);
+        let cert_path = dir.join("root_ca.der");
+        let cert_id = x509::public_key_id_of_signable(
+            &x509::parse_signable(&app.roots, &ber::encode_forest(&app.roots)).unwrap(),
+        )
+        .unwrap();
+
+        // The key file only gets a browser row once the refresh has seen it,
+        // so its side of the connection is checked after the refresh.
+        let check = |app: &mut App, when: &str, key_in_browser: bool| {
+            assert!(
+                app.key_files.iter().any(|k| k.path == key_path && k.key == cert_id),
+                "{}: the written key is indexed with the certificate's identity",
+                when
+            );
+            browser_select_by_name(app, "root_ca.der");
+            assert!(
+                app.browser_relations.key_links.contains(&key_path),
+                "{}: the certificate shows its key as connected",
+                when
+            );
+            if key_in_browser {
+                browser_select_by_name(app, key_name);
+                assert!(
+                    app.browser_relations.key_links.contains(&cert_path),
+                    "{}: the key shows its certificate as connected",
+                    when
+                );
+                browser_select_by_name(app, "root_ca.der");
+            }
+            app.start_resign();
+            let Mode::Resign(ref st) = app.mode else {
+                panic!("{}: no re-sign dialog: {}", when, app.status)
+            };
+            assert!(st.ready, "{}: re-signing must find the key: {}", when, st.detail);
+            app.mode = Mode::Browse;
+        };
+        check(&mut app, "right after the re-key", false);
+        assert!(app.refresh_filesystem(), "the written key and saved certificate are changes");
+        check(&mut app, "after the filesystem refresh", true);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_rekeyed_lms_key_without_password_links_and_resigns() {
+        // Regression: re-signing after an LMS re-key reported "the issuer's
+        // private key is not available" although the key file was linked —
+        // the speculative signature failed to verify because the linked
+        // OpenSSL was built without LMS (Debian's is), and nothing fell back
+        // to Botan.
+        stateful_rekey_links_and_resigns("pk-lms-link", "root_lms.key", |s| {
+            s.family_idx = hss_family_idx();
+            s.param_idx = 0;
+            s.hss = keygen::HssLmsParams {
+                is_hss: false,
+                hash_idx: 0,
+                levels: vec![keygen::HssLevel { height_idx: 0, w_idx: 3 }],
+            };
+        });
+    }
+
+    #[test]
+    fn a_rekeyed_xmss_key_without_password_links_and_resigns() {
+        stateful_rekey_links_and_resigns("pk-xmss-link", "root_xmss.key", |s| {
+            s.select_algorithm(keygen::KeyAlgorithm::Xmss(0)); // fast height-10 set
+        });
+    }
+
     #[test]
     fn rekeying_to_multi_level_hss_verifies_via_botan() {
         // Two-level HSS: OpenSSL has no HSS, so verification falls back to

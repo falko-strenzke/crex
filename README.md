@@ -51,13 +51,15 @@ The XMSS and HSS/LMS backends link Botan, built from bundled source via the
 compiler, GNU `make`, and Python 3 on `PATH` — Botan's `configure.py`. The
 first build spends a few minutes compiling Botan; later builds are cached.
 
-### OpenSSL 3.6 (required for HSS/LMS verification)
+### OpenSSL 3.6 (for OpenSSL-based LMS verification)
 
 The `openssl` crate is used for ML-DSA / SLH-DSA and for verifying single-level
 **LMS** certificates. LMS verification landed in **OpenSSL 3.6** and is
-disabled by default, so the build must link an OpenSSL **3.6 or newer built
-with `enable-lms`**. Point `openssl-sys` at such a build with the standard
-environment variables:
+disabled by default, so OpenSSL only verifies LMS when the build links an
+OpenSSL **3.6 or newer built with `enable-lms`**. Without one, crex detects
+the missing algorithm at runtime and verifies single-level LMS through Botan
+instead (which always handles multi-level HSS). To have OpenSSL do it, point
+`openssl-sys` at such a build with the standard environment variables:
 
 ```sh
 # Build OpenSSL 3.6 with LMS once (any prefix you like):
@@ -73,9 +75,9 @@ cargo build --release
 ```
 
 The CI (`.github/workflows/appimage.yml`) builds this OpenSSL from source and
-sets the same variables. Without a 3.6-`enable-lms` OpenSSL, everything builds
-but HSS/LMS single-level (LMS) certificates cannot be verified (multi-level
-HSS is verified by Botan and is unaffected).
+sets the same variables. A distribution OpenSSL (e.g. Debian's 3.6 packages)
+typically lacks LMS; LMS certificates still verify and re-sign there, via the
+Botan fallback.
 
 ## Usage
 
