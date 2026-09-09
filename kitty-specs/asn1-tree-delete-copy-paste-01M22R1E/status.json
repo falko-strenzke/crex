@@ -2,9 +2,9 @@
   "event_count": 73,
   "last_event_id": "01M2393VTMZNWBA3X8MN5VB19Y",
   "materialized_at": "2026-09-09T14:28:26.068183+00:00",
-  "mission_number": "1",
+  "mission_number": "",
   "mission_slug": "asn1-tree-delete-copy-paste-01M22R1E",
-  "mission_type": "software-dev",
+  "mission_type": "",
   "summary": {
     "approved": 0,
     "blocked": 0,
@@ -20,295 +20,146 @@
     "WP01": {
       "actor": "merge",
       "agent": "claude",
-      "agent_profile": "__resolved_profile_absent__",
-      "agent_profile_version": "__resolved_profile_version_absent__",
       "force_count": 2,
       "lane": "done",
       "last_event_id": "01M2393TXVHT6MM7R9137W420Y",
       "last_transition_at": "2026-09-09T14:28:25.147075+00:00",
-      "model": "__resolved_model_absent__",
-      "notes": [
-        "Ready for review",
-        "Review passed: src/keymap.rs correctly implements KeyBindingSet/TreeAction/EditorAction/Action, translate() and label() per contracts/keymap.md; no Yank variant on TreeAction; C-002 verified structurally (no vim ctrl arm exists); label(PasteBefore,Normal)=Some(\"(dialog)\") judgment call matches contract's literal cell text; lib.rs adds only pub mod keymap in correct alphabetical slot; tui.rs untouched. cargo build, cargo test keymap:: (7/7 pass), cargo clippy --lib all confirmed clean (only pre-existing unrelated warnings in app.rs/x509.rs)."
-      ],
-      "provider": "__resolved_provider_absent__",
       "review_result": {
         "feedback_path": "/home/fstrenzke/dev/crex/kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/tasks/WP01-key-binding-sets-and-action-translation/review-cycle-1.md",
         "reference": "review-cycle://asn1-tree-delete-copy-paste-01M22R1E/WP01-key-binding-sets-and-action-translation/review-cycle-1.md",
         "reviewer": "user",
         "verdict": "approved"
       },
-      "role": "reviewer",
-      "shell_pid": 38197,
-      "shell_pid_created_at": "1788956932.26",
-      "subtasks": {
-        "T001": "done",
-        "T002": "done",
-        "T003": "done",
-        "T004": "done",
-        "T005": "done"
-      }
+      "shell_pid": 13724,
+      "shell_pid_created_at": "1788956108.83"
     },
     "WP02": {
       "actor": "merge",
       "agent": "claude",
-      "agent_profile": "__resolved_profile_absent__",
-      "agent_profile_version": "__resolved_profile_version_absent__",
       "force_count": 2,
       "lane": "done",
       "last_event_id": "01M2393V5EZ3HFA3BKWZJW6MWT",
       "last_transition_at": "2026-09-09T14:28:25.390628+00:00",
-      "model": "__resolved_model_absent__",
-      "notes": [
-        "Ready for review",
-        "Review passed: config_path()/Settings/LoadOutcome/load()/save() match contracts/settings-file.md exactly (per-OS branching, strict TOML-subset parse, unknown-key preservation, atomic tmp+rename write, exact error string), main.rs wiring reuses existing Mode::Notice correctly with missing-file staying silent and only Invalid producing the notice, App gets exactly the one documented bindings field, no unrelated changes, 12/12 settings tests pass, full suite shows only the 2 known pre-existing failures, clippy has zero new warnings in settings.rs/main.rs/app.rs."
-      ],
-      "provider": "__resolved_provider_absent__",
       "review_result": {
         "feedback_path": "/home/fstrenzke/dev/crex/kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/tasks/WP02-settings-persistence-and-startup-loading/review-cycle-1.md",
         "reference": "review-cycle://asn1-tree-delete-copy-paste-01M22R1E/WP02-settings-persistence-and-startup-loading/review-cycle-1.md",
         "reviewer": "user",
         "verdict": "approved"
       },
-      "role": "reviewer",
-      "shell_pid": 53110,
-      "shell_pid_created_at": "1788957738.98",
-      "subtasks": {
-        "T006": "done",
-        "T007": "done",
-        "T008": "done",
-        "T009": "done",
-        "T010": "done"
-      }
+      "shell_pid": 42020,
+      "shell_pid_created_at": "1788957260.69"
     },
     "WP03": {
       "actor": "merge",
       "agent": "claude",
-      "agent_profile": "__resolved_profile_absent__",
-      "agent_profile_version": "__resolved_profile_version_absent__",
       "force_count": 4,
       "lane": "done",
       "last_event_id": "01M2393V8VHG99WZNGABKZJ9SJ",
       "last_transition_at": "2026-09-09T14:28:25.499214+00:00",
-      "model": "__resolved_model_absent__",
-      "notes": [
-        "Ready for review",
-        "Fixed: Esc now clears the mark in the Structure pane, per review feedback",
-        "Review passed (cycle 2): Esc now clears the mark via handle_document_key, tested against the real key-dispatch path. All cycle-1 findings remain resolved."
-      ],
-      "provider": "__resolved_provider_absent__",
-      "review": null,
       "review_result": {
         "feedback_path": "/home/fstrenzke/dev/crex/kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/tasks/WP03-mark-model-and-highlighting/review-cycle-2.md",
         "reference": "review-cycle://asn1-tree-delete-copy-paste-01M22R1E/WP03-mark-model-and-highlighting/review-cycle-2.md",
         "reviewer": "user",
         "verdict": "approved"
       },
-      "role": "reviewer",
-      "shell_pid": 69111,
-      "shell_pid_created_at": "1788958695.45",
-      "subtasks": {
-        "T011": "done",
-        "T012": "done",
-        "T013": "done",
-        "T014": "done",
-        "T015": "done",
-        "T016": "done"
-      }
+      "shell_pid": 67055,
+      "shell_pid_created_at": "1788958476.19"
     },
     "WP04": {
       "actor": "merge",
       "agent": "claude",
-      "agent_profile": "__resolved_profile_absent__",
-      "agent_profile_version": "__resolved_profile_version_absent__",
       "force_count": 2,
       "lane": "done",
       "last_event_id": "01M2393VC8WVH3KCVY7450S923",
       "last_transition_at": "2026-09-09T14:28:25.608179+00:00",
-      "model": "__resolved_model_absent__",
-      "notes": [
-        "Ready for review",
-        "Review passed: buffer.rs correctly generalizes delete/copy/cut over App::operand(); single-element wording byte-identical to pre-WP04 delete_selected; high-to-low removal, FR-008 cursor placement, and cut_operand's copy_operand_buffer abstraction all verified sound; 7/7 buffer:: tests, 429/431 full suite (2 pre-existing unrelated failures), mark::/keymap::/settings:: unchanged, no new clippy warnings."
-      ],
-      "provider": "__resolved_provider_absent__",
       "review_result": {
         "feedback_path": "/home/fstrenzke/dev/crex/kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/tasks/WP04-element-buffer-and-operand-editing/review-cycle-1.md",
         "reference": "review-cycle://asn1-tree-delete-copy-paste-01M22R1E/WP04-element-buffer-and-operand-editing/review-cycle-1.md",
         "reviewer": "user",
         "verdict": "approved"
       },
-      "role": "reviewer",
-      "shell_pid": 84817,
-      "shell_pid_created_at": "1788959790.63",
-      "subtasks": {
-        "T017": "done",
-        "T018": "done",
-        "T019": "done",
-        "T020": "done",
-        "T021": "done",
-        "T022": "done"
-      }
+      "shell_pid": 71571,
+      "shell_pid_created_at": "1788958870.21"
     },
     "WP05": {
       "actor": "merge",
       "agent": "claude",
-      "agent_profile": "__resolved_profile_absent__",
-      "agent_profile_version": "__resolved_profile_version_absent__",
       "force_count": 2,
       "lane": "done",
       "last_event_id": "01M2393V1ZASN7YNV3SVG9AHWY",
       "last_transition_at": "2026-09-09T14:28:25.279133+00:00",
-      "model": "__resolved_model_absent__",
-      "notes": [
-        "Ready for review",
-        "Review passed: bytes_for_paste() implements hex->base64->PEM->raw exactly per contract, odd-hex refusal short-circuits before base64, describe() Cow signature change updated cleanly with wording byte-for-byte unchanged for Hex/Base64/Binary, multi-block PEM order verified by test, input.rs find_pem_block extraction is safe (merged BEGIN/END-missing error message not asserted by any test, load_pem behavior otherwise unchanged), no app.rs/tui.rs touches, 13/13 clipboard tests pass, full suite shows only the 2 known pre-existing unrelated failures, no new clippy warnings. Forced past a pre-existing kitty-specs/ lane-hygiene gate (automated status-transition commits, not implementer-caused; verified src/ diff independently before forcing."
-      ],
-      "provider": "__resolved_provider_absent__",
       "review_result": {
         "feedback_path": "/home/fstrenzke/dev/crex/kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/tasks/WP05-clipboard-pem-reading/review-cycle-1.md",
         "reference": "review-cycle://asn1-tree-delete-copy-paste-01M22R1E/WP05-clipboard-pem-reading/review-cycle-1.md",
         "reviewer": "user",
         "verdict": "approved"
       },
-      "role": "reviewer",
-      "shell_pid": 38316,
-      "shell_pid_created_at": "1788956941.58",
-      "subtasks": {
-        "T023": "done",
-        "T024": "done",
-        "T025": "done",
-        "T026": "done"
-      }
+      "shell_pid": 15775,
+      "shell_pid_created_at": "1788956227.27"
     },
     "WP06": {
       "actor": "merge",
       "agent": "claude",
-      "agent_profile": "__resolved_profile_absent__",
-      "agent_profile_version": "__resolved_profile_version_absent__",
       "force_count": 2,
       "lane": "done",
       "last_event_id": "01M2393VFVPPGE3G18JQQ79GSA",
       "last_transition_at": "2026-09-09T14:28:25.723277+00:00",
-      "model": "__resolved_model_absent__",
-      "notes": [
-        "Ready for review",
-        "Review passed: paste.rs verified sound (real name collision confirmed for paste_bytes/paste_tree rename, unreachable!() in menu_confirm genuinely unreachable since Mode::EditMenu never carries PasteBefore/PasteAfter items, sibling_insert_root_reason genuinely extracted/shared with start_insert, parse_forest full-consumption guarantee verified by reading the loop, no mutation on any refusal path traced by hand, AsChild has no keyboard wiring as intended, resolve_clipboard test seam used only by tests while production paste_after_key/confirm_paste_where route through the real clipboard::read()); cargo build clean, cargo test paste:: 10/10, full cargo test 446 passed/2 pre-existing unrelated failures, cargo clippy --lib 4 pre-existing warnings none in touched code."
-      ],
-      "provider": "__resolved_provider_absent__",
       "review_result": {
         "feedback_path": "/home/fstrenzke/dev/crex/kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/tasks/WP06-paste-pipeline-and-placement/review-cycle-1.md",
         "reference": "review-cycle://asn1-tree-delete-copy-paste-01M22R1E/WP06-paste-pipeline-and-placement/review-cycle-1.md",
         "reviewer": "user",
         "verdict": "approved"
       },
-      "role": "reviewer",
-      "shell_pid": 113211,
-      "shell_pid_created_at": "1788961243.52",
-      "subtasks": {
-        "T027": "done",
-        "T028": "done",
-        "T029": "done",
-        "T030": "done",
-        "T031": "done",
-        "T032": "done"
-      }
+      "shell_pid": 92219,
+      "shell_pid_created_at": "1788960103.99"
     },
     "WP07": {
       "actor": "merge",
       "agent": "claude",
-      "agent_profile": "__resolved_profile_absent__",
-      "agent_profile_version": "__resolved_profile_version_absent__",
       "force_count": 2,
       "lane": "done",
       "last_event_id": "01M2393VPT6HPBTFEBX2TEQNEW",
       "last_transition_at": "2026-09-09T14:28:25.946085+00:00",
-      "model": "__resolved_model_absent__",
-      "notes": [
-        "Ready for review: Edit menu, File>Settings entry, paste_as_child, Settings dialog implemented; all T033-T037 subtasks done; full cargo test shows only the 2 known pre-existing unrelated failures",
-        "Review passed: Edit menu/Settings dialog verified correct — TOP_MENUS order, dispatch, paste_as_child delegation, reload-before-save, fresh key labels, and the three menu-index test fixes (File=0,Edit=1,About=2) all confirmed correct; build/test/clippy clean (only the 2 known pre-existing failures, 78 shared-module tests pass, 0 new clippy warnings)."
-      ],
-      "provider": "__resolved_provider_absent__",
       "review_result": {
         "feedback_path": "/home/fstrenzke/dev/crex/kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/tasks/WP07-edit-menu-and-settings-dialog/review-cycle-1.md",
         "reference": "review-cycle://asn1-tree-delete-copy-paste-01M22R1E/WP07-edit-menu-and-settings-dialog/review-cycle-1.md",
         "reviewer": "user",
         "verdict": "approved"
       },
-      "role": "reviewer",
-      "shell_pid": 131300,
-      "shell_pid_created_at": "1788962261.81",
-      "subtasks": {
-        "T033": "done",
-        "T034": "done",
-        "T035": "done",
-        "T036": "done",
-        "T037": "done"
-      }
+      "shell_pid": 121785,
+      "shell_pid_created_at": "1788961566.07"
     },
     "WP08": {
       "actor": "merge",
       "agent": "claude",
-      "agent_profile": "__resolved_profile_absent__",
-      "agent_profile_version": "__resolved_profile_version_absent__",
       "force_count": 2,
       "lane": "done",
       "last_event_id": "01M2393VKAPES4170RVW15ACWF",
       "last_transition_at": "2026-09-09T14:28:25.834520+00:00",
-      "model": "__resolved_model_absent__",
-      "notes": [
-        "Ready for review",
-        "Review passed: verified spec.md scenarios 9 & 11 are authoritative over the WP prompt's contradictory 'Ctrl+C/V/X/Z no-ops' text -- Ctrl+X=decrement, only Ctrl+C/V/Z are no-ops, matching the implementation exactly (tui.rs handle_edit_key fully gates the old Ctrl-block on edit.vim.is_none(), vim.rs's Normal dispatch handles Ctrl+A/Ctrl+X); all 5 Mode::Edit(...) call sites populate vim correctly; hex/decimal arithmetic boundary cases hand-traced and correct; no parallel selection/motion implementation; cargo build clean, vim:: 14/14 pass, full test 443 passed with only the 2 known pre-existing LMS/OpenSSL failures, clippy clean of new warnings."
-      ],
-      "provider": "__resolved_provider_absent__",
       "review_result": {
         "feedback_path": "/home/fstrenzke/dev/crex/kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/tasks/WP08-vim-modal-value-editors/review-cycle-1.md",
         "reference": "review-cycle://asn1-tree-delete-copy-paste-01M22R1E/WP08-vim-modal-value-editors/review-cycle-1.md",
         "reviewer": "user",
         "verdict": "approved"
       },
-      "role": "reviewer",
-      "shell_pid": 110650,
-      "shell_pid_created_at": "1788961123.1",
-      "subtasks": {
-        "T038": "done",
-        "T039": "done",
-        "T040": "done",
-        "T041": "done",
-        "T042": "done"
-      }
+      "shell_pid": 97695,
+      "shell_pid_created_at": "1788960230.91"
     },
     "WP09": {
       "actor": "merge",
       "agent": "claude",
-      "agent_profile": "__resolved_profile_absent__",
-      "agent_profile_version": "__resolved_profile_version_absent__",
       "force_count": 4,
       "lane": "done",
       "last_event_id": "01M2393VTMZNWBA3X8MN5VB19Y",
       "last_transition_at": "2026-09-09T14:28:26.068183+00:00",
-      "model": "__resolved_model_absent__",
-      "notes": [
-        "Ready for review",
-        "Fixed: DESIGN.md's paste.rs dependency claim now correctly includes buffer.rs, per review feedback",
-        "Review passed (cycle 2): DESIGN.md's paste.rs dependency claim now correctly includes buffer.rs. This is the mission's final WP - all 9 work packages are now approved."
-      ],
-      "provider": "__resolved_provider_absent__",
-      "review": null,
       "review_result": {
         "feedback_path": "/home/fstrenzke/dev/crex/kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/tasks/WP09-documentation-and-doc-tests/review-cycle-2.md",
         "reference": "review-cycle://asn1-tree-delete-copy-paste-01M22R1E/WP09-documentation-and-doc-tests/review-cycle-2.md",
         "reviewer": "user",
         "verdict": "approved"
       },
-      "role": "reviewer",
-      "shell_pid": 152275,
-      "shell_pid_created_at": "1788963610.88",
-      "subtasks": {
-        "T043": "done",
-        "T044": "done",
-        "T045": "done",
-        "T046": "done"
-      }
+      "shell_pid": 150455,
+      "shell_pid_created_at": "1788963503.86"
     }
   }
 }
