@@ -3,7 +3,6 @@ work_package_id: WP02
 title: Settings persistence and start-up loading
 dependencies: []
 requirement_refs:
-- C-005
 - C-006
 - C-007
 - FR-022
@@ -89,7 +88,7 @@ Read before starting:
 - `kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/contracts/settings-file.md` — the authoritative location table, file format, and behaviour table this WP implements exactly.
 - `kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/data-model.md` — `Settings`, `LoadOutcome` field definitions.
 - `kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/research.md` R1 and R11 — why std-only, and why atomic writes.
-- `kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/spec.md` FR-022–024, NFR-004, C-005–007 — the acceptance scenarios in User Story 4 this WP must satisfy end to end once wired into `main.rs`.
+- `kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/spec.md` FR-022–024, NFR-004, C-006–007 — the acceptance scenarios in User Story 4 this WP must satisfy end to end once wired into `main.rs`.
 - `src/main.rs` in full (it is short) — understand today's start-up sequence (argument parsing, then TUI init) before inserting the settings load.
 - `src/app.rs`'s existing `Mode::Notice(NoticeState)` and how it is populated at start-up today for specification-load warnings (search for `Notice` in `src/app.rs`) — reuse this exact mechanism for the `Invalid` case, do not invent a second notice type.
 
