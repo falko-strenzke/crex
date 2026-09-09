@@ -1,0 +1,19 @@
+{
+  "wp_id": "WP09",
+  "captured_at": "2026-09-09T14:04:22Z",
+  "base_branch": "feat/asn1-tree-delete-copy-paste",
+  "base_commit": "1fb3a98729ed5861b2e337fc238863ff0fd8c45f",
+  "test_runner": "pytest",
+  "total": 1,
+  "passed": 0,
+  "failed": 1,
+  "skipped": 0,
+  "failures": [
+    {
+      "test": "<gate-coverage-junit>",
+      "error": "no JUnit XML artifact produced by the scoped run",
+      "file": "unknown"
+    }
+  ],
+  "source_identity": "GateCoverageScopeSource/junit_xml"
+}
