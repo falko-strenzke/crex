@@ -1,0 +1,17 @@
+project:
+  uuid: 44c471ee-a4e1-4f04-9942-9f9c7d7b735e
+  slug: crex
+  node_id: e2a2f4ca3e66
+  build_id: 779fca0d-ee43-58bd-8e09-8ee23749bdbc
+mission_type_activations:
+- software-dev
+- documentation
+- research
+- plan
+vcs:
+  type: git
+agents:
+  available:
+  - claude
+  auto_commit: true
+  lint_on_edit: false
