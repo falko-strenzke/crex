@@ -7,6 +7,9 @@ requirement_refs:
 - FR-021
 - FR-024
 - NFR-005
+planning_base_branch: feat/asn1-tree-delete-copy-paste
+merge_target_branch: feat/asn1-tree-delete-copy-paste
+branch_strategy: Planning artifacts for this mission were generated on feat/asn1-tree-delete-copy-paste. During /spec-kitty.implement this WP may branch from a dependency-specific base, but completed changes must merge back into feat/asn1-tree-delete-copy-paste unless the human explicitly redirects the landing branch.
 subtasks:
 - T033
 - T034
