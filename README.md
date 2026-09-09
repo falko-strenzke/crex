@@ -11,6 +11,7 @@ Besides being a generic ASN.1/DER editor, the main functionality of crex is edit
 
 - Generic ASN.1/DER (PEM or binary) viewing and editing
   - Content search function
+  - Marking, deleting, copying and pasting whole elements or ranges in the tree, with configurable normal/vim key bindings
 - X.509 certificates and CRLs:
   - Issuer-Subject relations visualized in the file tree panel (after marking root certificates as trusted)
   - Semantic-aware editing of the content of various certificate fields

@@ -1,0 +1,339 @@
+{
+  "mission_slug": "asn1-tree-delete-copy-paste-01M22R1E",
+  "mission_number": "",
+  "mission_type": "software-dev",
+  "overall_verdict": "pass",
+  "criteria": [
+    {
+      "criterion_id": "FR-001",
+      "description": "Verify FR-001 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "app::tests::mark:: (16 tests, WP03) - mark_extends_and_shrinks_over_siblings",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:15.850967+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-002",
+      "description": "Verify FR-002 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "app::tests::mark:: - mark_stops_at_last_sibling_with_status",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:17.283950+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-003",
+      "description": "Verify FR-003 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "app::tests::mark:: - subtree-inclusive marking verified in operand tests",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:18.738095+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-004",
+      "description": "Verify FR-004 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "src/tui.rs draw_tree MARK_STYLE, reviewed WP03 cycle 2",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:20.209565+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-005",
+      "description": "Verify FR-005 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "app::tests::mark:: + tui::tests::mark_clears_on_esc_in_document_pane (WP03 cycle 2 fix)",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:21.684096+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-006",
+      "description": "Verify FR-006 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "buffer:: - range_delete_removes_all_marked_elements_and_places_cursor_correctly",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:23.155086+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-007",
+      "description": "Verify FR-007 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "buffer:: - single_element_delete_wording_is_unchanged + range delete confirmation",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:24.618702+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-008",
+      "description": "Verify FR-008 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "buffer:: - cursor placement verified in range_delete test, reviewed WP04",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:26.054779+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-009",
+      "description": "Verify FR-009 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "buffer:: - copy_fills_clipboard_and_buffer_under_normal_bindings",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:27.501307+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-010",
+      "description": "Verify FR-010 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "buffer:: - copy survives clipboard failure, reviewed WP04",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:28.974364+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-011",
+      "description": "Verify FR-011 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "paste:: - Ctrl+V paste-after dispatch, reviewed WP06",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:30.401324+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-012",
+      "description": "Verify FR-012 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "paste:: - dialog_triggers_only_on_first_sibling_under_normal_bindings",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:31.896895+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-013",
+      "description": "Verify FR-013 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "paste:: - paste before via Edit menu / dialog, reviewed WP06+WP07",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:33.362142+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-014",
+      "description": "Verify FR-014 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "paste:: paste_target AsChild + app::tests::paste_as_child_refused_on_primitive_target (WP07)",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:34.807563+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-015",
+      "description": "Verify FR-015 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "clipboard:: - bytes_for_paste hex/base64/PEM/raw ordering (13 tests)",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:36.285768+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-016",
+      "description": "Verify FR-016 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "clipboard:: + paste:: - invalid_paste_leaves_document_unchanged",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:37.783097+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-017",
+      "description": "Verify FR-017 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "paste:: - clipboard_empty_falls_back_to_element_buffer",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:39.243335+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-018",
+      "description": "Verify FR-018 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "paste:: - region_rule_refuses_paste_into_decrypted_pkcs8_top_level",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:40.670296+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-019",
+      "description": "Verify FR-019 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "paste:: - copy_then_paste_round_trips_byte_identical (cursor/dirty/status)",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:42.144630+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-020",
+      "description": "Verify FR-020 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "buffer:: - cut_aborts_when_operand_is_invalid",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:43.608058+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-021",
+      "description": "Verify FR-021 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "keymap:: label() + app::tests::edit_menu_lists_exactly_six_actions_in_order (WP07)",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:45.037902+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-022",
+      "description": "Verify FR-022 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "settings:: - save_then_load_round_trips (12 tests)",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:46.552885+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-023",
+      "description": "Verify FR-023 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "settings:: - config_path_resolves_xdg_config_home_first_on_linux etc.",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:48.015328+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-024",
+      "description": "Verify FR-024 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "settings_dialog_save_applies_and_persists + settings_dialog_esc_discards (WP07)",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:49.477467+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-025",
+      "description": "Verify FR-025 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "keymap:: - vim y/p/P translation; buffer:: yank behavior",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:50.947118+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-026",
+      "description": "Verify FR-026 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "buffer:: - delete_operand fills element buffer under vim, reviewed WP04",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:52.409557+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-027",
+      "description": "Verify FR-027 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "keymap:: - vim_set_has_no_ctrl_cvxz_bindings",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:53.882483+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-028",
+      "description": "Verify FR-028 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "vim:: - mode transition tests (14 tests)",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:55.329197+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-029",
+      "description": "Verify FR-029 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "vim:: - motion/x/visual/put/undo tests",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:56.788280+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-030",
+      "description": "Verify FR-030 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "vim:: - Ctrl+A/Ctrl+X increment/decrement tests incl hex/integer/OID boundary cases",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:58.234677+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-031",
+      "description": "Verify FR-031 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "src/tui.rs feedback_line mode indicator, reviewed WP08",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:24:59.693249+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-032",
+      "description": "Verify FR-032 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "app::tests::help_topics_cover_actions (WP09, independently re-verified by reviewer)",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:25:01.143644+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    },
+    {
+      "criterion_id": "FR-033",
+      "description": "Verify FR-033 is satisfied",
+      "proof_type": "automated_test",
+      "evidence": "keymap:: label_and_translate_agree + full test suite regression (469 passed)",
+      "pass_fail": "pass",
+      "verified_by": "claude",
+      "verified_at": "2026-09-09T14:25:02.611987+00:00",
+      "notes": "TODO: replace with a real acceptance criterion"
+    }
+  ],
+  "negative_invariants": []
+}

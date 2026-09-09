@@ -15,7 +15,12 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use crex::{app::App, ber, dump, input, spec, tui};
+use crex::{
+    app::{App, Mode, NoticeState},
+    ber, dump, input,
+    keymap::KeyBindingSet,
+    settings, spec, tui,
+};
 
 const USAGE: &str = "\
 (C) MTG AG
@@ -74,6 +79,12 @@ fn main() -> ExitCode {
         return usage_error("no input file given");
     };
 
+    // Load the persisted key-binding choice before any TUI state exists, so
+    // both start-up paths (directory browser / single file) can apply it and
+    // — on a broken settings file — surface a notice via the existing
+    // Mode::Notice mechanism instead of crashing or failing silently.
+    let (bindings, settings_notice) = load_bindings();
+
     if path.is_dir() {
         if dump_mode {
             return usage_error("--dump requires a file, not a directory");
@@ -82,6 +93,8 @@ fn main() -> ExitCode {
             return usage_error("--out requires a file, not a directory");
         }
         let mut app = App::new_dir(path);
+        app.bindings = bindings;
+        apply_settings_notice(&mut app, settings_notice);
         load_specs_into(&mut app);
         return match tui::run(app) {
             Ok(()) => ExitCode::SUCCESS,
@@ -111,11 +124,43 @@ fn main() -> ExitCode {
     // An explicit file argument opens exactly that file: single-file mode, with
     // no directory scan, no browser pane and no re-signing / re-keying.
     let mut app = App::new_single_file(path, out_path, container, roots, der.len());
+    app.bindings = bindings;
+    apply_settings_notice(&mut app, settings_notice);
     load_specs_into(&mut app);
     match tui::run(app) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => fail(&format!("terminal error: {}", e)),
     }
+}
+
+/// Resolve the active key-binding set from the persisted settings file
+/// (`src/settings.rs`), falling back to [`KeyBindingSet::default`] whenever
+/// there is nothing to load or it fails to load. When the file exists but
+/// is invalid, also returns the wording for a start-up notice (matching
+/// `contracts/settings-file.md`), to be shown once `App` exists.
+fn load_bindings() -> (KeyBindingSet, Option<String>) {
+    match settings::load() {
+        settings::LoadOutcome::Loaded(settings) => (settings.key_bindings, None),
+        settings::LoadOutcome::Missing | settings::LoadOutcome::NoLocation => {
+            (KeyBindingSet::default(), None)
+        }
+        settings::LoadOutcome::Invalid { path, reason } => (
+            KeyBindingSet::default(),
+            Some(format!("settings file {}: {}; using defaults", path.display(), reason)),
+        ),
+    }
+}
+
+/// Surface a settings-load problem as a start-up notice, reusing the same
+/// `Mode::Notice` mechanism `load_specs_into` uses for spec-load warnings.
+/// A no-op when there is nothing to report.
+fn apply_settings_notice(app: &mut App, notice: Option<String>) {
+    let Some(message) = notice else { return };
+    app.mode = Mode::Notice(NoticeState {
+        title: " SETTINGS ".to_string(),
+        lines: vec![message],
+        warning: true,
+    });
 }
 
 /// Load the bundled ASN.1 specifications into `app`. Any per-file parse errors

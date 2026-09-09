@@ -32,9 +32,13 @@ use ratatui::{DefaultTerminal, Frame};
 
 use crate::app::{
     App, DateTimeEditor, EditKind, EditState, Editor, FilterMatcher, Focus, HexEditor, Mode,
-    HssPicker, PickerTarget, PubKeyState, RowSource, TextEditor, TextFormat, DATE_FIELDS, EDIT_BYTES_PER_LINE,
-    EDIT_DIGITS_PER_LINE, HELP_TOPICS, PICKER_CLASSES, PICKER_UNIVERSAL, TOP_MENUS,
+    HssPicker, MenuAction, MenuItem, MenuState, PickerTarget, PubKeyState, Row, RowSource,
+    TextEditor, TextFormat, DATE_FIELDS, EDIT_BYTES_PER_LINE, EDIT_DIGITS_PER_LINE, HELP_TOPICS,
+    PICKER_CLASSES, PICKER_UNIVERSAL, TOP_MENUS, top_menu_action_key,
 };
+use crate::keymap;
+use crate::mark::Mark;
+use crate::paste::{PasteSource, PasteWhere};
 use crate::x509::{self, basic_constraints, extended_key_usage, key_usage};
 use crate::browser::FileStatus;
 use crate::cost;
@@ -150,6 +154,7 @@ fn event_loop(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
             Mode::Edit(_) => handle_edit_key(app, key),
             Mode::TypePicker(_) => handle_picker_key(app, key),
             Mode::EditMenu(_) => handle_menu_key(app, key),
+            Mode::PasteWhere(_) => handle_paste_where_key(app, key),
             Mode::Password(_) => handle_password_key(app, key),
             Mode::Resign(_) => handle_resign_key(app, key),
             Mode::EditPubKey(_) => handle_pubkey_key(app, key),
@@ -157,6 +162,7 @@ fn event_loop(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
             Mode::EditKeyUsage(_) => handle_key_usage_key(app, key),
             Mode::EditExtKeyUsage(_) => handle_ext_key_usage_key(app, key),
             Mode::FilterInput => handle_filter_key(app, key),
+            Mode::Settings(_) => handle_settings_key(app, key),
             Mode::Notice(_) => app.dismiss_notice(), // any key dismisses
             // A running re-key cannot be safely interrupted (a partial XMSS
             // state advance would be unrecoverable): ignore all input.
@@ -322,6 +328,49 @@ fn handle_document_key(app: &mut App, key: KeyEvent) {
         app.save();
         return;
     }
+    // Shift+Up/Down extend or shrink the tree mark, and 'd'/Cut/Copy run
+    // through the same translation layer — `keymap::translate` reports the
+    // same `TreeAction` for a given key regardless of `set` for all of
+    // these except Cut/Copy (Ctrl+X/Ctrl+C in the normal set, 'y' for Copy
+    // in the vim set; the vim set has no Cut key today, see
+    // `keymap::label`), so dispatch is keyed on `app.bindings` throughout.
+    // Handled ahead of the plain `KeyCode` match below, which would
+    // otherwise treat e.g. Shift+Up the same as a plain Up.
+    match keymap::translate(key, app.bindings) {
+        Some(keymap::Action::Tree(keymap::TreeAction::MarkUp)) => {
+            app.mark_extend(-1);
+            return;
+        }
+        Some(keymap::Action::Tree(keymap::TreeAction::MarkDown)) => {
+            app.mark_extend(1);
+            return;
+        }
+        Some(keymap::Action::Tree(keymap::TreeAction::Delete)) => {
+            app.delete_selected();
+            return;
+        }
+        Some(keymap::Action::Tree(keymap::TreeAction::Cut)) => {
+            app.cut_operand();
+            return;
+        }
+        Some(keymap::Action::Tree(keymap::TreeAction::Copy)) => {
+            app.copy_operand();
+            return;
+        }
+        Some(keymap::Action::Tree(keymap::TreeAction::PasteAfter)) => {
+            paste_after_key(app);
+            return;
+        }
+        Some(keymap::Action::Tree(keymap::TreeAction::PasteBefore)) => {
+            // `translate` only ever reports this for vim's Shift+P — the
+            // normal set's "before" is reached solely through the dialog
+            // (T030), which calls `paste_tree` directly rather than routing
+            // back through this dispatch.
+            paste_from_buffer(app, PasteWhere::Before);
+            return;
+        }
+        _ => {}
+    }
     match key.code {
         KeyCode::Up | KeyCode::Char('k') => app.move_by(-1),
         KeyCode::Down | KeyCode::Char('j') => app.move_by(1),
@@ -336,11 +385,18 @@ fn handle_document_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('E') => app.open_edit_menu(),
         KeyCode::Char('i') => app.start_insert(false),
         KeyCode::Char('I') => app.start_insert(true),
-        KeyCode::Char('d') => app.delete_selected(),
         KeyCode::Char('K') => app.move_selected(-1),
         KeyCode::Char('J') => app.move_selected(1),
         KeyCode::Char('z') => app.start_decrypt(),
         KeyCode::Char('/') => app.start_filter(),
+        // Esc has no other meaning in the Structure pane today (no
+        // quit/delete-confirm state is tied to it here — those are handled
+        // elsewhere, e.g. the top-level Ctrl+C/'q' quit-confirm flow and the
+        // 'd'-repeat delete-confirm reset at the top of this function). Its
+        // only job in this mode is clearing an active mark, per FR-005 /
+        // spec.md's Acceptance Scenario 5. `clear_mark()` is a no-op when no
+        // mark exists, so this is safe to call unconditionally.
+        KeyCode::Esc => app.clear_mark(),
         _ => {}
     }
 }
@@ -492,6 +548,19 @@ fn handle_picker_key(app: &mut App, key: KeyEvent) {
     }
 }
 
+/// The Settings dialog: Up/Down (or `j`/`k`) toggles the radio choice
+/// between the two binding sets, Enter saves and applies it, Esc discards.
+fn handle_settings_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Up | KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('k') => {
+            app.settings_toggle()
+        }
+        KeyCode::Enter => app.submit_settings(),
+        KeyCode::Esc => app.cancel_settings(),
+        _ => {}
+    }
+}
+
 fn handle_menu_key(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Esc => app.cancel_menu(),
@@ -513,7 +582,150 @@ fn handle_menu_key(app: &mut App, key: KeyEvent) {
     }
 }
 
+/// Whether the current selection is the first sibling of its parent —
+/// derived from the row's path the same way WP03 derived sibling index:
+/// the last path segment is `0`. An empty document (no rows) is treated as
+/// "not the first sibling" — there is no selection to open a dialog about,
+/// and `paste_tree` itself already handles the empty-document case as a new
+/// top level regardless of `at`.
+pub(crate) fn is_first_sibling(app: &App) -> bool {
+    app.rows.get(app.selected).is_some_and(|row| row.path.last() == Some(&0))
+}
+
+/// Ctrl+V (normal bindings) / `p` (vim bindings) — both report
+/// `TreeAction::PasteAfter` from `keymap::translate`; which source and
+/// whether to show the before/after dialog is this function's decision,
+/// keyed on `app.bindings`, per that action's contract.
+pub(crate) fn paste_after_key(app: &mut App) {
+    if app.bindings == keymap::KeyBindingSet::Vim {
+        paste_from_buffer(app, PasteWhere::After);
+        return;
+    }
+    if is_first_sibling(app) {
+        open_paste_where_dialog(app);
+    } else {
+        app.paste_tree(PasteSource::Clipboard, PasteWhere::After);
+    }
+}
+
+/// Vim's `p`/`P`: always the element buffer, never the dialog, regardless
+/// of sibling position (FR-019). `None`/empty buffer reports "nothing to
+/// paste" via `paste_tree`'s own empty-`Buffer` handling.
+pub(crate) fn paste_from_buffer(app: &mut App, at: PasteWhere) {
+    let bytes = app.element_buffer.as_ref().map(|b| b.bytes.clone()).unwrap_or_default();
+    app.paste_tree(PasteSource::Buffer(bytes), at);
+}
+
+/// Opens the before/after placement dialog (T030), defaulting the
+/// selection to "after" — the common case — while still letting the user
+/// pick "before".
+fn open_paste_where_dialog(app: &mut App) {
+    let items = vec![
+        MenuItem { action: MenuAction::PasteBefore, label: "Paste before", desc: "" },
+        MenuItem { action: MenuAction::PasteAfter, label: "Paste after", desc: "" },
+    ];
+    app.mode = Mode::PasteWhere(MenuState { title: " PASTE ", items, selected: 1 });
+    app.status = "choose before or after the selection".to_string();
+}
+
+/// Key handling for `Mode::PasteWhere` — the same Up/Down/1-2/Enter/Esc
+/// shape as `handle_menu_key`'s `Mode::EditMenu`, kept as its own function
+/// rather than folded into `handle_menu_key` because that function (and the
+/// `App::menu_move`/`menu_confirm` methods it calls) is hard-wired to
+/// `Mode::EditMenu` specifically — see those methods' bodies.
+pub(crate) fn handle_paste_where_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc => {
+            // FR-012: Esc pastes nothing and leaves the status untouched
+            // beyond returning to Browse.
+            app.mode = Mode::Browse;
+            app.status = "cancelled".to_string();
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            if let Mode::PasteWhere(ref mut m) = app.mode {
+                let n = m.items.len().max(1) as isize;
+                m.selected = (m.selected as isize - 1).rem_euclid(n) as usize;
+            }
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if let Mode::PasteWhere(ref mut m) = app.mode {
+                let n = m.items.len().max(1) as isize;
+                m.selected = (m.selected as isize + 1).rem_euclid(n) as usize;
+            }
+        }
+        KeyCode::Char(c @ '1'..='2') => {
+            let idx = (c as usize) - ('1' as usize);
+            if let Mode::PasteWhere(ref mut m) = app.mode {
+                if idx < m.items.len() {
+                    m.selected = idx;
+                }
+            }
+            confirm_paste_where(app);
+        }
+        KeyCode::Enter => confirm_paste_where(app),
+        _ => {}
+    }
+}
+
+/// Applies the selected entry of the open `Mode::PasteWhere` dialog and
+/// returns to Browse — `paste_tree` itself also sets `Mode::Browse` on
+/// success, but a refusal (e.g. the clipboard turned out empty between the
+/// dialog opening and confirming) leaves `app.mode` as `paste_tree` left
+/// it, which is `Browse` either way since it never re-opens a dialog.
+pub(crate) fn confirm_paste_where(app: &mut App) {
+    let Mode::PasteWhere(ref m) = app.mode else { return };
+    let Some(action) = m.items.get(m.selected).map(|i| i.action) else { return };
+    let at = match action {
+        MenuAction::PasteBefore => PasteWhere::Before,
+        _ => PasteWhere::After,
+    };
+    app.paste_tree(PasteSource::Clipboard, at);
+}
+
 fn handle_edit_key(app: &mut App, key: KeyEvent) {
+    // Under vim bindings, Esc/Enter mean the same thing as below (Cancel /
+    // Apply from Normal, and from Insert Enter also applies) but everything
+    // else is dispatched through the vim command interpreter instead of the
+    // rest of this function — including the Ctrl-combination block right
+    // after, which vim's own Ctrl+A/Ctrl+X (inside `VimState::handle_key`)
+    // replaces. `edit.vim.is_none()` below is what keeps the two paths from
+    // ever both running for the same key.
+    let mut vim_dispatch = None;
+    if let Mode::Edit(ref mut edit) = app.mode {
+        if let Some(mut vim) = edit.vim.take() {
+            let insert_mode = vim.mode == crate::vim::EditorMode::Insert;
+            let outcome = vim.handle_key(&mut edit.editor, key);
+            edit.vim = Some(vim);
+            vim_dispatch = Some((outcome, insert_mode));
+        }
+    }
+    if let Some((outcome, insert_mode)) = vim_dispatch {
+        match outcome {
+            crate::vim::VimOutcome::Apply => {
+                app.commit_edit();
+                return;
+            }
+            crate::vim::VimOutcome::Cancel => {
+                app.cancel_edit();
+                return;
+            }
+            crate::vim::VimOutcome::Continue => {
+                // Insert mode's printable characters and Backspace/Delete
+                // are not vim commands — they fall through to the existing
+                // character-insertion path below, unchanged from the
+                // normal-bindings behaviour. Any other key (a motion just
+                // dispatched above, or a key vim.rs already consumed) must
+                // not also reach that path, which would otherwise take
+                // e.g. 'l' as a hex digit.
+                if !insert_mode {
+                    return;
+                }
+                if !matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace | KeyCode::Delete) {
+                    return;
+                }
+            }
+        }
+    }
     match key.code {
         KeyCode::Esc => {
             app.cancel_edit();
@@ -526,8 +738,11 @@ fn handle_edit_key(app: &mut App, key: KeyEvent) {
         _ => {}
     }
     // The Ctrl combinations have to be recognised before the plain-character
-    // arm below, which would otherwise take 'a' for a hex digit.
-    if key.modifiers.contains(KeyModifiers::CONTROL) {
+    // arm below, which would otherwise take 'a' for a hex digit. Skipped
+    // entirely under vim bindings (`edit.vim.is_some()`, handled above) —
+    // vim has its own Ctrl+A/Ctrl+X and holds none of the others.
+    let vim_active = matches!(app.mode, Mode::Edit(ref edit) if edit.vim.is_some());
+    if !vim_active && key.modifiers.contains(KeyModifiers::CONTROL) {
         // Terminals differ over whether a Ctrl combination arrives upper or
         // lower case, so fold it before matching.
         let folded = match key.code {
@@ -625,6 +840,9 @@ fn draw(frame: &mut Frame, app: &mut App) {
     if matches!(app.mode, Mode::EditMenu(_)) {
         draw_edit_menu(frame, app, main);
     }
+    if matches!(app.mode, Mode::PasteWhere(_)) {
+        draw_paste_where(frame, app, main);
+    }
     if matches!(app.mode, Mode::Password(_)) {
         draw_password(frame, app, main);
     }
@@ -654,6 +872,9 @@ fn draw(frame: &mut Frame, app: &mut App) {
     }
     if matches!(app.mode, Mode::NewFile(_)) {
         draw_new_file(frame, app, main);
+    }
+    if matches!(app.mode, Mode::Settings(_)) {
+        draw_settings(frame, app, main);
     }
     // Last, so the open drop-down covers the panes beneath it.
     if let Some(bar) = menu_bar {
@@ -756,13 +977,25 @@ fn draw_menu_bar(frame: &mut Frame, app: &App, bar: Rect, below: Rect) {
     spans.push(Span::styled("  ←→ menu  ↑↓ entry  ⏎ run  Esc close", Style::new().dim()));
     frame.render_widget(Paragraph::new(Line::from(spans)), bar);
 
-    // The drop-down: one row per entry, sized to the widest label + summary.
+    // The drop-down: one row per entry, sized to the widest label + summary
+    // + key hint. The key hint is looked up fresh here, on every draw, via
+    // `top_menu_action_key` + `keymap::label` — never cached or baked into
+    // `TOP_MENUS` — so a binding-set change made through the Settings dialog
+    // is reflected the very next time this menu is opened (see
+    // `top_menu_action_key`'s doc comment).
     let menu = &TOP_MENUS[state.menu];
+    let key_text = |entry: &crate::app::TopMenuItem| -> String {
+        match top_menu_action_key(entry.action) {
+            Some(action) => keymap::label(action, app.bindings).unwrap_or("menu only").to_string(),
+            None => String::new(),
+        }
+    };
     let label_w = menu.items.iter().map(|i| i.label.chars().count()).max().unwrap_or(0);
+    let key_w = menu.items.iter().map(|i| key_text(i).chars().count()).max().unwrap_or(0);
     let width = menu
         .items
         .iter()
-        .map(|i| label_w + i.desc.chars().count() + 6)
+        .map(|i| label_w + i.desc.chars().count() + key_w + 8)
         .max()
         .unwrap_or(20) as u16;
     let width = width.min(below.width);
@@ -787,10 +1020,18 @@ fn draw_menu_bar(frame: &mut Frame, app: &App, bar: Rect, below: Rect) {
             } else {
                 Style::new().bold()
             };
-            Line::from(vec![
+            let key = key_text(entry);
+            let mut spans = vec![
                 Span::styled(format!(" {:<width$} ", entry.label, width = label_w), style),
                 Span::styled(format!(" {}", entry.desc), Style::new().dim()),
-            ])
+            ];
+            if !key.is_empty() {
+                spans.push(Span::styled(
+                    format!("  [{:>width$}]", key, width = key_w),
+                    Style::new().dim(),
+                ));
+            }
+            Line::from(spans)
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), inner);
@@ -2328,6 +2569,32 @@ fn filter_bar_line(app: &App, label: &str) -> Line<'static> {
     Line::from(spans)
 }
 
+/// Background applied to every row within an active tree mark
+/// (Shift+Up/Down). Draws on the same blue-background convention as
+/// `HEX_SELECTION_STYLE` (the value editors' selection, documented in the
+/// help window's "Editing values" topic) for visual consistency, but is a
+/// separate constant on purpose: it must stay visibly distinct from the
+/// cursor-row highlight (`List::highlight_style`, below) so a marked row and
+/// the cursor row read as two different things per FR-004. The marked
+/// cursor row additionally gets `Modifier::BOLD` layered on top in
+/// `draw_tree`.
+const MARK_STYLE: Style = Style::new().fg(Color::White).bg(Color::Blue);
+
+/// Whether `row` falls inside `mark`'s range: same forest, same parent path,
+/// sibling index within `mark.range()`. Elided filter placeholders never
+/// match — a mark cannot exist while the tree filter is active in the first
+/// place (see `src/mark.rs`), so this is a defensive `false` rather than a
+/// case that should ever actually arise.
+fn row_in_mark(mark: &Mark, row: &Row) -> bool {
+    if row.elided || row.source != mark.source {
+        return false;
+    }
+    let Some((&idx, parent)) = row.path.split_last() else {
+        return false;
+    };
+    parent == mark.parent.as_slice() && mark.range().contains(&idx)
+}
+
 fn draw_tree(frame: &mut Frame, app: &mut App, area: Rect) {
     // The filter bar sits above the tree while the field has focus or holds
     // a non-empty filter string — unless the filter is the browser search,
@@ -2344,7 +2611,9 @@ fn draw_tree(frame: &mut Frame, app: &mut App, area: Rect) {
     let items: Vec<ListItem> = app
         .rows
         .iter()
-        .map(|row| {
+        .enumerate()
+        .map(|(row_idx, row)| {
+            let marked = app.mark.as_ref().is_some_and(|m| row_in_mark(m, row));
             if row.elided {
                 // A run of elements the tree filter omitted.
                 return ListItem::new(Line::from(vec![
@@ -2414,7 +2683,22 @@ fn draw_tree(frame: &mut Frame, app: &mut App, area: Rect) {
                     ));
                 }
             }
-            ListItem::new(Line::from(spans))
+            let item = ListItem::new(Line::from(spans));
+            if marked {
+                // The cursor row still needs to read as "the cursor" even
+                // while marked — `List`'s own `highlight_style` (REVERSED,
+                // set below) already handles that visually, so the extra
+                // `BOLD` here is a second, redundant-on-purpose cue that
+                // survives terminals which render reversed video subtly.
+                let style = if row_idx == app.selected {
+                    MARK_STYLE.add_modifier(Modifier::BOLD)
+                } else {
+                    MARK_STYLE
+                };
+                item.style(style)
+            } else {
+                item
+            }
         })
         .collect();
     let title = if app.file_open {
@@ -3183,14 +3467,27 @@ fn draw_content_browse(frame: &mut Frame, app: &mut App, area: Rect) {
     frame.render_widget(para, area);
 }
 
-/// First line of every value editor: live feedback from `to_bytes()`.
+/// First line of every value editor: the vim mode name (when vim bindings
+/// are active — FR-031) followed by live feedback from `to_bytes()`.
 fn feedback_line(edit: &EditState) -> Line<'static> {
-    match edit.to_bytes() {
-        Ok(bytes) => Line::from(Span::styled(
+    let mode_span = edit.vim.as_ref().map(|vim| {
+        let name = match vim.mode {
+            crate::vim::EditorMode::Normal => "NORMAL",
+            crate::vim::EditorMode::Insert => "INSERT",
+            crate::vim::EditorMode::Visual => "VISUAL",
+        };
+        Span::styled(format!("{}  ", name), Style::new().fg(Color::Cyan).bold())
+    });
+    let feedback = match edit.to_bytes() {
+        Ok(bytes) => Span::styled(
             format!("→ {} byte{}", bytes.len(), if bytes.len() == 1 { "" } else { "s" }),
             Style::new().fg(Color::Green),
-        )),
-        Err(e) => Line::from(Span::styled(format!("✗ {}", e), Style::new().fg(Color::Red))),
+        ),
+        Err(e) => Span::styled(format!("✗ {}", e), Style::new().fg(Color::Red)),
+    };
+    match mode_span {
+        Some(mode) => Line::from(vec![mode, feedback]),
+        None => Line::from(feedback),
     }
 }
 
@@ -3423,6 +3720,99 @@ fn draw_edit_menu(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Paragraph::new(lines), inner);
 }
 
+/// Centered popup for the before/after paste placement dialog (T030). Kept
+/// deliberately small — two entries, no description column — rather than
+/// matching `draw_edit_menu`'s fuller visual weight, per this WP's notes.
+fn draw_paste_where(frame: &mut Frame, app: &App, area: Rect) {
+    let Mode::PasteWhere(ref m) = app.mode else { return };
+    let width = 40.min(area.width);
+    let height = (m.items.len() as u16 + 3).min(area.height);
+    let popup = Rect {
+        x: area.x + (area.width.saturating_sub(width)) / 2,
+        y: area.y + (area.height.saturating_sub(height)) / 2,
+        width,
+        height,
+    };
+    frame.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().fg(Color::Yellow))
+        .title(m.title);
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+    let mut lines: Vec<Line> = Vec::new();
+    for (i, item) in m.items.iter().enumerate() {
+        let style = if i == m.selected {
+            Style::new().add_modifier(Modifier::REVERSED).bold()
+        } else {
+            Style::new().bold()
+        };
+        lines.push(Line::from(Span::styled(format!(" {} {}", i + 1, item.label), style)));
+    }
+    lines.push(Line::from(Span::styled(" ↑↓/1-2 select   ⏎ choose   Esc cancel", Style::new().dim())));
+    frame.render_widget(Paragraph::new(lines), inner);
+}
+
+/// Centered popup for the Settings dialog (File ▸ Settings): a two-row
+/// radio choice between the binding sets, following the exact `(•)`/`( )`
+/// glyph convention `draw_edit_pubkey`'s `s.use_existing` radio already
+/// uses, plus the settings-file path (or the reason none could be resolved)
+/// beneath it.
+fn draw_settings(frame: &mut Frame, app: &App, area: Rect) {
+    let Mode::Settings(ref s) = app.mode else { return };
+    let width = 60.min(area.width);
+    let height = 9.min(area.height);
+    let popup = Rect {
+        x: area.x + (area.width.saturating_sub(width)) / 2,
+        y: area.y + (area.height.saturating_sub(height)) / 2,
+        width,
+        height,
+    };
+    frame.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().fg(MENU_COLOR))
+        .title(" SETTINGS ")
+        .title_bottom(" ↑↓ choose   ⏎ save   Esc cancel ");
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let normal_mark = if s.choice == keymap::KeyBindingSet::Normal { "(•)" } else { "( )" };
+    let vim_mark = if s.choice == keymap::KeyBindingSet::Vim { "(•)" } else { "( )" };
+    let row = |mark: &str, label: &str, selected: bool| {
+        let style = if selected {
+            Style::new().add_modifier(Modifier::REVERSED).bold()
+        } else {
+            Style::new()
+        };
+        Line::from(Span::styled(format!(" {mark} {label}"), style))
+    };
+    let mut lines = vec![
+        Line::from(Span::styled(" Key bindings:", Style::new().underlined())),
+        row(normal_mark, "normal", s.choice == keymap::KeyBindingSet::Normal),
+        row(vim_mark, "vim", s.choice == keymap::KeyBindingSet::Vim),
+        Line::default(),
+    ];
+    match &s.path {
+        Some(path) => {
+            lines.push(Line::from(Span::styled(
+                format!(" saved to {}", path.display()),
+                Style::new().dim(),
+            )));
+        }
+        None => {
+            lines.push(Line::from(Span::styled(
+                " no configuration directory found for this system",
+                Style::new().dim(),
+            )));
+        }
+    }
+    if let Some(error) = &s.error {
+        lines.push(Line::from(Span::styled(format!(" {error}"), Style::new().fg(Color::Red))));
+    }
+    frame.render_widget(Paragraph::new(lines), inner);
+}
+
 fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     let dirty = if app.dirty { " [modified]" } else { "" };
     let hints = match app.mode {
@@ -3441,6 +3831,7 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
         Mode::Help(_) => "↑↓ topic  PgUp/PgDn or [ ] scroll  Esc close",
         Mode::TypePicker(_) => "←→ column  ↑↓ select  0-9 tag number  ⏎ continue  Esc cancel",
         Mode::EditMenu(_) => "↑↓ or 1-5 select  ⏎ choose  Esc cancel",
+        Mode::PasteWhere(_) => "↑↓ or 1-2 select  ⏎ paste  Esc cancel — pastes nothing",
         Mode::Edit(EditState { editor: Editor::DateTime(_), .. }) => "Enter apply  Esc cancel",
         Mode::Edit(_) => {
             "Enter apply  Esc cancel  Shift+arrows select  Ctrl+A all  Ctrl+C/X/V copy/cut/paste  Ctrl+Z undo"
@@ -3458,6 +3849,7 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
             "↑↓ select  Space toggle  type OID + ⏎ add  ⏎ apply  Esc cancel"
         }
         Mode::FilterInput => "type to filter (hex/text/int/OID)  ⏎/Tab navigate  Esc clear",
+        Mode::Settings(_) => "↑↓ choose  ⏎ save  Esc cancel",
         Mode::Notice(_) => "press any key to dismiss",
         Mode::Progress(_) => "working — the operation cannot be interrupted",
     };
@@ -4641,14 +5033,24 @@ mod tests {
         assert!(text.contains("New DER"), "the File menu should be open:\n{text}");
         assert!(text.contains("start an empty document"), "entries carry a summary");
 
-        // → opens the next heading, and the entry selection restarts there.
+        // → opens the next heading (Edit), and the entry selection restarts
+        // there.
+        handle_menu_bar_key(&mut app, key(KeyCode::Right));
+        term.draw(|f| draw(f, &mut app)).unwrap();
+        let text = buffer_text(term.backend().buffer());
+        assert!(text.contains("Delete") && text.contains("Paste as child"), "Edit should be open:\n{text}");
+        assert!(!text.contains("New DER"), "only one drop-down at a time");
+        let Mode::MenuBar(ref bar) = app.mode else { panic!("still on the bar") };
+        assert_eq!((bar.menu, bar.item), (1, 0));
+
+        // Another → moves on to About.
         handle_menu_bar_key(&mut app, key(KeyCode::Right));
         term.draw(|f| draw(f, &mut app)).unwrap();
         let text = buffer_text(term.backend().buffer());
         assert!(text.contains("Help") && text.contains("Version"), "About should be open:\n{text}");
-        assert!(!text.contains("New DER"), "only one drop-down at a time");
+        assert!(!text.contains("Delete"), "only one drop-down at a time");
         let Mode::MenuBar(ref bar) = app.mode else { panic!("still on the bar") };
-        assert_eq!((bar.menu, bar.item), (1, 0));
+        assert_eq!((bar.menu, bar.item), (2, 0));
 
         // ↓ moves within the drop-down, and both directions wrap.
         handle_menu_bar_key(&mut app, key(KeyCode::Down));
@@ -4779,6 +5181,7 @@ mod tests {
         let mut app = menu_app();
         let key = |c| KeyEvent::new(c, event::KeyModifiers::NONE);
         app.toggle_menu_bar();
+        handle_menu_bar_key(&mut app, key(KeyCode::Right)); // Edit
         handle_menu_bar_key(&mut app, key(KeyCode::Right)); // About
         handle_menu_bar_key(&mut app, key(KeyCode::Down)); // Version
         handle_menu_bar_key(&mut app, key(KeyCode::Enter));
@@ -4803,6 +5206,7 @@ mod tests {
         let mut app = menu_app();
         let key = |c| KeyEvent::new(c, event::KeyModifiers::NONE);
         app.toggle_menu_bar();
+        handle_menu_bar_key(&mut app, key(KeyCode::Right)); // Edit
         handle_menu_bar_key(&mut app, key(KeyCode::Right)); // About
         handle_menu_bar_key(&mut app, key(KeyCode::Enter)); // Help
         assert!(matches!(app.mode, Mode::Help(_)));
@@ -4922,6 +5326,42 @@ mod tests {
         press(&mut app, '[', plain);
         term.draw(|f| draw(f, &mut app)).unwrap();
         assert_eq!(app.content_scroll, 0);
+    }
+
+    /// Regression test for the review-1 finding on WP03: `handle_document_key`
+    /// had no `KeyCode::Esc` arm at all, so pressing Esc in the Structure
+    /// pane while a mark was active did nothing — the mark survived. This
+    /// drives the real key-dispatch path (`handle_document_key`), not just
+    /// `App::clear_mark()` directly, so it actually exercises the fix rather
+    /// than restating it. Companion to the `mark_clears_on_*` tests in
+    /// `app::tests::mark`, which live in `src/app.rs` because they reuse
+    /// that module's `test_app`/fixture helpers; this one lives here because
+    /// `handle_document_key` is private to `src/tui.rs`.
+    #[test]
+    fn mark_clears_on_esc_in_document_pane() {
+        use crate::input::Container;
+        // `SEQUENCE { INTEGER 1, INTEGER 2, INTEGER 3 }` — one constructed
+        // parent with three siblings to mark over.
+        let data: Vec<u8> = vec![
+            0x30, 0x09, //
+            0x02, 0x01, 0x01, //
+            0x02, 0x01, 0x02, //
+            0x02, 0x01, 0x03,
+        ];
+        let roots = parse_forest(&data, 0).unwrap();
+        let mut app = App::new_single_file(
+            PathBuf::from("marks.der"),
+            PathBuf::from("/nonexistent/out"),
+            Container::Raw,
+            roots,
+            data.len(),
+        );
+        app.select(1); // the first INTEGER sibling
+        app.mark_extend(1); // starts and extends the mark over two siblings
+        assert!(app.mark.is_some(), "test setup: mark_extend should have set a mark");
+
+        handle_document_key(&mut app, KeyEvent::new(KeyCode::Esc, event::KeyModifiers::NONE));
+        assert!(app.mark.is_none(), "Esc must clear an active mark in the Structure pane");
     }
 
     /// The content pane previews the file the Files pane is on, so its scroll

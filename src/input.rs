@@ -68,25 +68,54 @@ pub fn load(raw: &[u8]) -> Result<(Vec<u8>, Container), String> {
 }
 
 fn load_pem(text: &str) -> Result<(Vec<u8>, Container), String> {
-    let begin = text
-        .find("-----BEGIN ")
-        .ok_or("missing PEM BEGIN marker")?;
+    let block = find_pem_block(text, 0).ok_or("missing PEM BEGIN or END marker")?;
+    if block.begin_label != block.end_label {
+        return Err("missing PEM END marker".to_string());
+    }
+    let bytes = b64_decode(&block.body)?;
+    Ok((bytes, Container::Pem { label: block.begin_label }))
+}
+
+/// One `-----BEGIN label-----` … `-----END label-----` block located inside
+/// a larger text, as found by [`find_pem_block`].
+pub(crate) struct PemBlock {
+    /// The label named on the `BEGIN` marker.
+    pub begin_label: String,
+    /// The label named on the `END` marker — not necessarily the same as
+    /// `begin_label`; callers that require a match check it themselves.
+    pub end_label: String,
+    /// The body between the two markers, already stripped of whitespace.
+    pub body: String,
+    /// Byte offset in the searched text just past the `END` marker's
+    /// closing dashes, so a caller can resume searching there for a
+    /// further block.
+    pub end_offset: usize,
+}
+
+/// Locate one PEM block in `text`, searching from byte offset `from`.
+///
+/// This finds block boundaries only: the `BEGIN` and `END` labels are
+/// returned separately and not compared here. [`load_pem`] enforces an
+/// exact match itself, since it promises callers a single real container
+/// label; `clipboard::bytes_for_paste` deliberately accepts a mismatched
+/// label when reading pasted text, per contracts/clipboard-payload.md, and
+/// calls this in a loop to find further blocks after the first.
+pub(crate) fn find_pem_block(text: &str, from: usize) -> Option<PemBlock> {
+    let begin = text.get(from..)?.find("-----BEGIN ")? + from;
     let after_begin = &text[begin + "-----BEGIN ".len()..];
-    let label_end = after_begin
-        .find("-----")
-        .ok_or("malformed PEM BEGIN marker")?;
-    let label = after_begin[..label_end].to_string();
-    let body_start = label_end + "-----".len();
-    let end_marker = format!("-----END {}-----", label);
-    let body_end = after_begin
-        .find(&end_marker)
-        .ok_or("missing PEM END marker")?;
-    let body: String = after_begin[body_start..body_end]
+    let label_end = after_begin.find("-----")?;
+    let begin_label = after_begin[..label_end].to_string();
+    let body_start = begin + "-----BEGIN ".len() + label_end + "-----".len();
+    let end_marker_start = text[body_start..].find("-----END ")? + body_start;
+    let after_end = &text[end_marker_start + "-----END ".len()..];
+    let end_label_end = after_end.find("-----")?;
+    let end_label = after_end[..end_label_end].to_string();
+    let end_offset = end_marker_start + "-----END ".len() + end_label_end + "-----".len();
+    let body: String = text[body_start..end_marker_start]
         .chars()
         .filter(|c| !c.is_whitespace())
         .collect();
-    let bytes = b64_decode(&body)?;
-    Ok((bytes, Container::Pem { label }))
+    Some(PemBlock { begin_label, end_label, body, end_offset })
 }
 
 /// Re-apply the outer container to freshly encoded DER bytes.
