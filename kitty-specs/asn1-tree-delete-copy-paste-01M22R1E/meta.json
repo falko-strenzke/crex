@@ -12,5 +12,7 @@
   "purpose_tldr": "Let users mark, delete, copy and paste ASN.1 elements in the tree pane with keyboard shortcuts.",
   "slug": "asn1-tree-delete-copy-paste-01M22R1E",
   "target_branch": "feat/asn1-tree-delete-copy-paste",
-  "topology": "coord"
+  "topology": "coord",
+  "vcs": "git",
+  "vcs_locked_at": "2026-09-09T12:11:13.934021+00:00"
 }
