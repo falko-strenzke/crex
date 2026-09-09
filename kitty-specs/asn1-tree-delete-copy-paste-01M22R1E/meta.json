@@ -14,9 +14,8 @@
   "accepted_by": "fstrenzke",
   "accepted_from_commit": "7f71cf5947fe230c76ea54751cde164e7fd2d0fe",
   "baseline_merge_commit": "e4cf3d46ff33f9de0b4a6498f60dfbf9cd0f8b5f",
-  "coordination_branch": "kitty/mission-asn1-tree-delete-copy-paste-01M22R1E",
   "created_at": "2026-09-09T09:30:01.496567+00:00",
-  "flattened": false,
+  "flattened": true,
   "friendly_name": "ASN.1 Tree Delete, Copy and Paste",
   "mission_id": "01M22R1ESWGJN19C8X7SKS1N1G",
   "mission_number": null,
@@ -28,7 +27,6 @@
   "slug": "asn1-tree-delete-copy-paste-01M22R1E",
   "status_phase": "1",
   "target_branch": "feat/asn1-tree-delete-copy-paste",
-  "topology": "coord",
   "vcs": "git",
   "vcs_locked_at": "2026-09-09T12:11:13.934021+00:00"
 }
