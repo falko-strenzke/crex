@@ -1,0 +1,22 @@
+adapter_id: project-direct-write
+adapter_notes: Registered authored project content; no generation or source 
+  rewrite performed.
+adapter_version: '1'
+artifact_content_hash: 
+  27666f9eb2eba7bab8ec76806cae7e372496a0d1ebea8c9c1b9a2b9782589b9f
+artifact_kind: directive
+artifact_slug: check-implicit-wp-dependencies
+artifact_urn: directive:CHECK_IMPLICIT_WP_DEPENDENCIES
+corpus_snapshot_id: (none)
+evidence_bundle_hash:
+generated_at: '2026-09-09T14:42:20+00:00'
+inputs_hash: 27666f9eb2eba7bab8ec76806cae7e372496a0d1ebea8c9c1b9a2b9782589b9f
+produced_at: '2026-09-09T14:42:20+00:00'
+schema_version: '2'
+source_input_ids:
+- .kittify/doctrine/directive/CHECK_IMPLICIT_WP_DEPENDENCIES.directive.yaml
+source_section: 
+  .kittify/doctrine/directive/CHECK_IMPLICIT_WP_DEPENDENCIES.directive.yaml
+source_urns: []
+synthesis_run_id: 01M239XAS2A7HD8Q8T25HW2VKB
+synthesizer_version: 3.2.6.2

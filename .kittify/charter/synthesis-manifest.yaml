@@ -1,0 +1,25 @@
+adapter_id: project-direct-write
+adapter_version: '1'
+artifacts:
+- content_hash: 27666f9eb2eba7bab8ec76806cae7e372496a0d1ebea8c9c1b9a2b9782589b9f
+  kind: directive
+  path: 
+    .kittify/doctrine/directive/CHECK_IMPLICIT_WP_DEPENDENCIES.directive.yaml
+  provenance_path: 
+    .kittify/charter/provenance/directive-check-implicit-wp-dependencies.yaml
+  slug: check-implicit-wp-dependencies
+- content_hash: f0138943626534089b035a742caca313bd65ae511a18bff6a8b472ba494bde66
+  kind: directive
+  path: 
+    .kittify/doctrine/directive/REFRESH_PLANNING_COMMIT_SHA_ON_TASK_EDITS.directive.yaml
+  provenance_path: 
+    .kittify/charter/provenance/directive-refresh-planning-commit-sha-on-task-edits.yaml
+  slug: refresh-planning-commit-sha-on-task-edits
+built_in_only: false
+bundle_content_hash:
+created_at: '2026-09-09T14:42:20+00:00'
+manifest_hash: 48b002bad938a2edf2d37dd3c3ff8c5c1c01d7c761a9f04b1937afc2dd1b295b
+mission_id:
+run_id: 01M239XAS2A7HD8Q8T25HW2VKB
+schema_version: '3'
+synthesizer_version: 3.2.6.2
