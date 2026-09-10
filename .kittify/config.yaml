@@ -1,0 +1,39 @@
+project:
+  uuid: 44c471ee-a4e1-4f04-9942-9f9c7d7b735e
+  slug: crex
+  node_id: e2a2f4ca3e66
+  build_id: 779fca0d-ee43-58bd-8e09-8ee23749bdbc
+mission_type_activations:
+- software-dev
+- documentation
+- research
+- plan
+vcs:
+  type: git
+agents:
+  available:
+  - claude
+  auto_commit: true
+  lint_on_edit: false
+activated_directives:
+- 001-architectural-integrity-standard
+- 003-decision-documentation-requirement
+- 010-specification-fidelity-requirement
+- 018-doctrine-versioning-requirement
+- 024-locality-of-change
+- 025-boy-scout-rule
+- 028-search-tool-discipline
+- 029-agent-commit-signing-policy
+- 030-test-and-typecheck-quality-gate
+- 031-context-aware-design
+- 032-conceptual-alignment
+- 033-targeted-staging-policy
+- 034-test-first-development
+- 035-bulk-edit-occurrence-classification
+- 036-black-box-integration-testing
+- 037-living-documentation-sync
+- 038-structured-prompt-boundary
+- 039-lynn-cole-engineering-culture
+- 040-recurring-bug-structural-intervention
+- REFRESH_PLANNING_COMMIT_SHA_ON_TASK_EDITS
+- CHECK_IMPLICIT_WP_DEPENDENCIES

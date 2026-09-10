@@ -29,6 +29,15 @@
 //! digits is also valid base64 and reading `DEADBEEF` as base64 would silently
 //! paste something else entirely — and reports which reading it used so the
 //! status line can say so rather than leaving the user to spot the difference.
+//!
+//! **Reading bytes for the tree.** [`bytes_for_paste`] extends the same
+//! reading order one level up for the tree paste pipeline: it returns actual
+//! bytes rather than hex-digit text, adds a fourth reading for PEM-armoured
+//! text (one or more concatenated blocks), and — unlike [`hex_digits`], which
+//! always succeeds — refuses outright on an odd hex-digit count rather than
+//! silently falling through to base64.
+
+use std::borrow::Cow;
 
 /// How pasted data was read.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -37,19 +46,77 @@ pub enum PasteKind {
     Hex,
     /// The text decoded as base64.
     Base64,
+    /// The text held one or more PEM blocks, decoded and concatenated in
+    /// order; the count is how many blocks were found.
+    Pem(usize),
     /// Neither: the bytes themselves were converted to hex.
     Binary,
 }
 
 impl PasteKind {
     /// Wording for the status line, saying how the data was read.
-    pub fn describe(self) -> &'static str {
+    pub fn describe(self) -> Cow<'static, str> {
         match self {
-            PasteKind::Hex => "read as hex digits",
-            PasteKind::Base64 => "decoded from base64",
-            PasteKind::Binary => "taken as raw bytes",
+            PasteKind::Hex => Cow::Borrowed("read as hex digits"),
+            PasteKind::Base64 => Cow::Borrowed("decoded from base64"),
+            PasteKind::Pem(n) => {
+                Cow::Owned(format!("decoded from PEM ({n} block{})", if n == 1 { "" } else { "s" }))
+            }
+            PasteKind::Binary => Cow::Borrowed("taken as raw bytes"),
         }
     }
+}
+
+/// The bytes `data` should be pasted as, and how it was read.
+///
+/// Follows the same reading order as [`hex_digits`], one level up: hex,
+/// then base64, then — new here — one or more PEM-armoured blocks, then
+/// raw bytes. Unlike `hex_digits`, this returns actual bytes rather than
+/// hex-digit text, because the tree paste pipeline hands the result
+/// straight to [`crate::ber::parse_forest`]; and unlike `hex_digits`, this
+/// can fail, at the hex step only, when the input reads as hex-with-typo
+/// rather than a real alternate encoding (see the odd-digit-count check
+/// below). This function is deliberately silent on what the resulting
+/// bytes mean — whether they parse as a valid ASN.1 forest is entirely the
+/// caller's concern.
+pub fn bytes_for_paste(data: &[u8]) -> Result<(Vec<u8>, PasteKind), String> {
+    if let Ok(text) = std::str::from_utf8(data) {
+        let stripped: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+        if !stripped.is_empty() && stripped.chars().all(|c| c.is_ascii_hexdigit()) {
+            // `DEADBEE` reads as a typo, not base64 — refuse outright rather
+            // than guessing, per contracts/clipboard-payload.md.
+            if !stripped.len().is_multiple_of(2) {
+                return Err("odd number of hex digits".to_string());
+            }
+            let bytes = (0..stripped.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&stripped[i..i + 2], 16).unwrap())
+                .collect();
+            return Ok((bytes, PasteKind::Hex));
+        }
+        if !stripped.is_empty() {
+            if let Ok(bytes) = crate::input::b64_decode(&stripped) {
+                if !bytes.is_empty() {
+                    return Ok((bytes, PasteKind::Base64));
+                }
+            }
+        }
+        let mut bytes = Vec::new();
+        let mut block_count = 0usize;
+        let mut offset = 0usize;
+        while let Some(block) = crate::input::find_pem_block(text, offset) {
+            let Ok(decoded) = crate::input::b64_decode(&block.body) else {
+                break;
+            };
+            bytes.extend_from_slice(&decoded);
+            block_count += 1;
+            offset = block.end_offset;
+        }
+        if block_count > 0 {
+            return Ok((bytes, PasteKind::Pem(block_count)));
+        }
+    }
+    Ok((data.to_vec(), PasteKind::Binary))
 }
 
 /// The hex digits `data` should be pasted as, and how it was read.
@@ -254,9 +321,66 @@ mod tests {
 
     #[test]
     fn every_reading_has_wording_for_the_status_line() {
-        for kind in [PasteKind::Hex, PasteKind::Base64, PasteKind::Binary] {
+        for kind in [PasteKind::Hex, PasteKind::Base64, PasteKind::Binary, PasteKind::Pem(1)] {
             assert!(!kind.describe().is_empty());
         }
+    }
+
+    #[test]
+    fn bytes_for_paste_reads_hex() {
+        assert_eq!(
+            bytes_for_paste(b"DEADBEEF"),
+            Ok((vec![0xDE, 0xAD, 0xBE, 0xEF], PasteKind::Hex))
+        );
+    }
+
+    #[test]
+    fn bytes_for_paste_refuses_odd_hex_digit_count() {
+        assert_eq!(bytes_for_paste(b"DEADBEE"), Err("odd number of hex digits".to_string()));
+    }
+
+    #[test]
+    fn bytes_for_paste_reads_base64() {
+        let (bytes, kind) = bytes_for_paste(b"SGVsbG8gd29ybGQ=").unwrap();
+        assert_eq!(bytes, b"Hello world");
+        assert_eq!(kind, PasteKind::Base64);
+    }
+
+    #[test]
+    fn bytes_for_paste_reads_one_pem_block() {
+        let payload: &[u8] = b"\x01\x02\x03\x04";
+        let b64 = crate::input::b64_encode(payload);
+        let pem = format!("-----BEGIN TEST-----\n{b64}\n-----END TEST-----\n");
+        let (bytes, kind) = bytes_for_paste(pem.as_bytes()).unwrap();
+        assert_eq!(bytes, payload);
+        assert_eq!(kind, PasteKind::Pem(1));
+    }
+
+    #[test]
+    fn bytes_for_paste_reads_multiple_pem_blocks_concatenated_in_order() {
+        let first = crate::input::b64_encode(&[0xAA, 0xBB]);
+        let second = crate::input::b64_encode(&[0xCC, 0xDD, 0xEE]);
+        let pem = format!(
+            "-----BEGIN ONE-----\n{first}\n-----END ONE-----\n\
+             -----BEGIN TWO-----\n{second}\n-----END TWO-----\n"
+        );
+        let (bytes, kind) = bytes_for_paste(pem.as_bytes()).unwrap();
+        assert_eq!(bytes, vec![0xAA, 0xBB, 0xCC, 0xDD, 0xEE]);
+        assert_eq!(kind, PasteKind::Pem(2));
+    }
+
+    #[test]
+    fn bytes_for_paste_falls_back_to_raw() {
+        // Includes a byte >0x7F, so it is not even valid UTF-8 and therefore
+        // unambiguously none of the hex/base64/PEM readings.
+        let data = [0x00u8, 0x01, 0xFF, 0x02];
+        assert_eq!(bytes_for_paste(&data), Ok((data.to_vec(), PasteKind::Binary)));
+    }
+
+    #[test]
+    fn pem_kind_describe_wording_matches_contract() {
+        assert_eq!(PasteKind::Pem(1).describe(), "decoded from PEM (1 block)");
+        assert_eq!(PasteKind::Pem(3).describe(), "decoded from PEM (3 blocks)");
     }
 
     /// Reading may well fail on the machine running the tests — no display,

@@ -1,0 +1,32 @@
+{
+  "accept_commit": "ff6aca454cb930cd57ba6fdafb6443ba27af063e",
+  "acceptance_history": [
+    {
+      "accept_commit": "ff6aca454cb930cd57ba6fdafb6443ba27af063e",
+      "acceptance_mode": "pr",
+      "accepted_at": "2026-09-09T14:25:44.814427+00:00",
+      "accepted_by": "fstrenzke",
+      "accepted_from_commit": "7f71cf5947fe230c76ea54751cde164e7fd2d0fe"
+    }
+  ],
+  "acceptance_mode": "pr",
+  "accepted_at": "2026-09-09T14:25:44.814427+00:00",
+  "accepted_by": "fstrenzke",
+  "accepted_from_commit": "7f71cf5947fe230c76ea54751cde164e7fd2d0fe",
+  "baseline_merge_commit": "e4cf3d46ff33f9de0b4a6498f60dfbf9cd0f8b5f",
+  "created_at": "2026-09-09T09:30:01.496567+00:00",
+  "flattened": true,
+  "friendly_name": "ASN.1 Tree Delete, Copy and Paste",
+  "mission_id": "01M22R1ESWGJN19C8X7SKS1N1G",
+  "mission_number": null,
+  "mission_slug": "asn1-tree-delete-copy-paste-01M22R1E",
+  "mission_type": "software-dev",
+  "pr_bound": true,
+  "purpose_context": "crex users editing BER/DER structures can currently only delete or insert one element at a time in the ASN.1 tree. This mission adds Shift+Up/Down marking of multiple elements, deletion of the marked range, and copy/paste of whole ASN.1 subtrees so restructuring documents becomes fast and keyboard-driven.",
+  "purpose_tldr": "Let users mark, delete, copy and paste ASN.1 elements in the tree pane with keyboard shortcuts.",
+  "slug": "asn1-tree-delete-copy-paste-01M22R1E",
+  "status_phase": "1",
+  "target_branch": "feat/asn1-tree-delete-copy-paste",
+  "vcs": "git",
+  "vcs_locked_at": "2026-09-09T12:11:13.934021+00:00"
+}

@@ -1,0 +1,50 @@
+schema_version: "1.0"
+id: CHECK_IMPLICIT_WP_DEPENDENCIES
+title: Check for implicit shared-state dependencies when declaring WP dependencies
+intent: >
+  Work-package dependencies are easy to under-declare when a WP needs a
+  field, type, or other piece of state that another WP introduces on a
+  shared container, but that dependency is not obvious from the depending
+  WP's own described scope or call graph. On a mission observed in
+  practice, a WP that read a shared application struct's key-binding field
+  was not declared as depending on the WP that added that field, because
+  the dependency was on shared state rather than on a function call; the
+  implementer discovered the gap mid-implementation and had to merge the
+  approved sibling lane manually to unblock the build.
+enforcement: advisory
+scope: >
+  Applies to `/spec-kitty.tasks` work-package decomposition and dependency
+  declaration for missions whose work packages extend a shared mutable
+  state container (e.g. one central struct, class, or module several WPs
+  add fields, methods, or branches to).
+procedures:
+  - When declaring a work package's `dependencies`, first list the WPs whose
+    functions or types it calls directly, as usual.
+  - Then separately check whether the WP reads or writes any field, variant,
+    or piece of state on a shared container (an application struct, a
+    central enum, global config) that another WP also adds to or depends on
+    — and declare that WP as a dependency too, even when the direct call
+    graph would not otherwise require it.
+  - >-
+    When in doubt whether a shared-state touch is a real dependency, prefer
+    declaring it: an unnecessary dependency costs a lane merge; a missing
+    one costs a build failure discovered mid-implementation.
+  - If a missing shared-state dependency is discovered during implementation
+    or review, treat it as a planning defect to note (not just silently
+    route around) so the task graph reflects reality for any subsequent
+    re-implementation cycle.
+integrity_rules:
+  - Declared dependencies should reflect actual build/state requirements —
+    everything a WP's code needs to already exist and compile against — not
+    only the primary functional call graph described in its own prompt.
+  - A WP prompt's own "depends on" narrative and the lane dependency graph
+    used for lane allocation must agree; a mismatch discovered mid-mission
+    should be corrected in the planning artifacts, not only worked around
+    in the affected lane.
+validation_criteria:
+  - No implementer needs to manually merge an approved sibling lane mid-
+    implementation solely to obtain a type or field that a formally declared
+    dependency would already have provided.
+  - Every WP's `dependencies` field is consistent with the shared-state
+    fields, types, or variants its own implementation guidance instructs it
+    to read or extend.

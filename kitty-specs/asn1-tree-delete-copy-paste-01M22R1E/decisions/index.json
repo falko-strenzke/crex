@@ -1,0 +1,126 @@
+{
+  "entries": [
+    {
+      "created_at": "2026-09-09T09:30:20.544270Z",
+      "decision_id": "01M22R21G0HFPF3P32E3T3VXZA",
+      "final_answer": "Contiguous siblings under one parent only; a marked constructed element implicitly includes its whole subtree",
+      "input_key": "marking_scope",
+      "mission_id": "01M22R1ESWGJN19C8X7SKS1N1G",
+      "mission_slug": "asn1-tree-delete-copy-paste-01M22R1E",
+      "opened_by": "cli",
+      "options": [
+        "Contiguous siblings under one parent only",
+        "Any contiguous run of visible rows regardless of depth",
+        "Other"
+      ],
+      "origin_flow": "specify",
+      "other_answer": false,
+      "question": "When the user holds Shift and presses Up/Down in the ASN.1 tree, what may the marked range span?",
+      "rationale": null,
+      "resolved_at": "2026-09-09T09:31:30.924243Z",
+      "resolved_by": null,
+      "slot_key": "specify.marking.scope",
+      "status": "resolved",
+      "step_id": null,
+      "summary_json": null
+    },
+    {
+      "created_at": "2026-09-09T09:31:32.336758Z",
+      "decision_id": "01M22R47KGCH8DQYB4GM2TMTXQ",
+      "final_answer": "Both paths (y/p in-app and Ctrl+C/Ctrl+V system clipboard), selected by a configuration option toggling between 'normal' (Ctrl+C/V) and 'vim' key bindings. Configuration persisted in the OS-typical user config location. The setting also governs the content editor: with vim bindings it gets a vim-style insert mode entered with 'i' etc. A new File top-bar menu entry opens a config editor (initially only the key-binding choice).",
+      "input_key": "clipboard_keys_and_storage",
+      "mission_id": "01M22R1ESWGJN19C8X7SKS1N1G",
+      "mission_slug": "asn1-tree-delete-copy-paste-01M22R1E",
+      "opened_by": "cli",
+      "options": [
+        "Ctrl+C/Ctrl+V via system clipboard as DER hex, plus in-app buffer",
+        "y/p vim-style with in-app buffer only",
+        "Other"
+      ],
+      "origin_flow": "specify",
+      "other_answer": true,
+      "question": "Which keys trigger copy/paste in the tree and where does copied data live (in-app buffer vs system clipboard)?",
+      "rationale": null,
+      "resolved_at": "2026-09-09T09:39:20.889719Z",
+      "resolved_by": null,
+      "slot_key": "specify.clipboard.keys-and-storage",
+      "status": "resolved",
+      "step_id": null,
+      "summary_json": null
+    },
+    {
+      "created_at": "2026-09-09T09:39:41.186739Z",
+      "decision_id": "01M22RK502WGQNATNRXR2WWWC8",
+      "final_answer": "Modal core (normal/insert modes, i/a/I/A, Esc, h/j/k/l/0/$, x, v visual, y/d/p, u). In vim bindings Ctrl+C/X/V/Z do NOT act as in normal bindings; Ctrl+A increments and Ctrl+X decrements the number under the cursor as in vim. The vim key-binding space must stay free of normal-mode artifacts so more vim functions can be added later.",
+      "input_key": "vim_editor_depth",
+      "mission_id": "01M22R1ESWGJN19C8X7SKS1N1G",
+      "mission_slug": "asn1-tree-delete-copy-paste-01M22R1E",
+      "opened_by": "cli",
+      "options": [
+        "Modal core: normal/insert modes, hjkl/0/$ motion, x, v visual selection, y/d/p, u undo",
+        "Insert-mode toggle only: i enters typing, Esc leaves it, everything else unchanged",
+        "Other"
+      ],
+      "origin_flow": "specify",
+      "other_answer": true,
+      "question": "With vim key bindings configured, how much of vim's modal editing do the value editors (hex, text, integer, OID ...) adopt?",
+      "rationale": null,
+      "resolved_at": "2026-09-09T09:45:08.349596Z",
+      "resolved_by": null,
+      "slot_key": "specify.vim-bindings.editor-depth",
+      "status": "resolved",
+      "step_id": null,
+      "summary_json": null
+    },
+    {
+      "created_at": "2026-09-09T11:20:22.525143Z",
+      "decision_id": "01M22YBGQX9QXP30582Z3JWY6V",
+      "final_answer": "Std-only: env-var based OS paths and a hand-written key = \"value\" parser (TOML-compatible subset), no new crates",
+      "input_key": "settings_persistence_deps",
+      "mission_id": "01M22R1ESWGJN19C8X7SKS1N1G",
+      "mission_slug": "asn1-tree-delete-copy-paste-01M22R1E",
+      "opened_by": "cli",
+      "options": [
+        "Std-only: env-var based OS paths and a hand-written key = value parser (TOML-compatible subset)",
+        "Add dirs + toml + serde crates",
+        "Other"
+      ],
+      "origin_flow": "plan",
+      "other_answer": false,
+      "question": "How should the settings file be located and parsed: with new crates (dirs + toml/serde) or with a zero-dependency std-only implementation?",
+      "rationale": null,
+      "resolved_at": "2026-09-09T11:26:50.305278Z",
+      "resolved_by": null,
+      "slot_key": "plan.settings.persistence-deps",
+      "status": "resolved",
+      "step_id": null,
+      "summary_json": null
+    },
+    {
+      "created_at": "2026-09-09T11:26:51.675579Z",
+      "decision_id": "01M22YQCRVFJEJ2YFCGD001PQE",
+      "final_answer": "Confirmed as proposed",
+      "input_key": "engineering_alignment_confirmed",
+      "mission_id": "01M22R1ESWGJN19C8X7SKS1N1G",
+      "mission_slug": "asn1-tree-delete-copy-paste-01M22R1E",
+      "opened_by": "cli",
+      "options": [
+        "Confirmed",
+        "Confirmed with changes",
+        "Other"
+      ],
+      "origin_flow": "plan",
+      "other_answer": false,
+      "question": "Is the Engineering Alignment (keymap translation layer, new modules keymap/settings/vim, element buffer as DER bytes, vim modes as editor wrapper) confirmed?",
+      "rationale": null,
+      "resolved_at": "2026-09-09T11:32:07.004343Z",
+      "resolved_by": null,
+      "slot_key": "plan.architecture.engineering-alignment",
+      "status": "resolved",
+      "step_id": null,
+      "summary_json": null
+    }
+  ],
+  "mission_id": "01M22R1ESWGJN19C8X7SKS1N1G",
+  "version": 1
+}

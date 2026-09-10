@@ -131,6 +131,23 @@ src/
              of nine named bits)
   x509/extended_key_usage.rs  the same for the X.509 ExtendedKeyUsage extension
              (a SEQUENCE OF key-purpose OID; also uses oid.rs for names)
+  keymap.rs  raw terminal key -> semantic tree/editor action, for both
+             key-binding sets (normal, vim); also the labels the Edit menu
+             and help window show for each action's key
+  settings.rs  persisted per-user settings (today: the active key-binding
+             set), read from/written to an OS-typical config file in a
+             small hand-written TOML subset
+  mark.rs    the tree mark (Shift+Up/Down): a contiguous run of siblings
+             under one parent, and the operand it or the plain selection
+             yields to delete/copy/cut/paste
+  buffer.rs  the in-app element buffer and the delete/copy/cut operations
+             that fill or consume it, encoding the operand via ber.rs
+  paste.rs   the paste pipeline: resolves a paste source (clipboard or
+             element buffer) to bytes, validates them as a complete BER/DER
+             forest, and splices them into the tree
+  vim.rs     vim modal editing for the value editors (normal/insert/visual
+             mode, motions, the editors' own yank/put register); drives the
+             existing Editor operations rather than reimplementing them
   app.rs     application state: tree, flattened rows, selection, edit logic
   tui.rs     ratatui event loop and rendering (no business logic)
 tests/
@@ -181,6 +198,26 @@ on the `openssl` crate + `ber.rs` (it takes raw DER, not the `Node` tree);
 by-name PQ key generation) + `ber.rs` (`verify::sign` does the actual signing);
 `x509::basic_constraints` and `x509::key_usage` depend only on `ber.rs`, and
 `x509::extended_key_usage` on `ber.rs` + `oid.rs` (all structural, no crypto);
+`keymap.rs` depends on nothing but `ratatui`'s crossterm key types (not even
+`std` beyond the prelude) — it is the one place that knows which key means
+what in which binding set, and both `tui.rs`'s dispatch and `app.rs`'s Edit
+menu ask it, rather than matching raw keys a second time; `settings.rs`
+depends only on the standard library plus `keymap::KeyBindingSet` (the one
+value it persists); `mark.rs` and `buffer.rs` both depend on `app.rs`'s
+`App`/`Row`/`RowSource` (they are written as `impl App` blocks in their own
+files) and on each other only one-way — `buffer.rs` additionally depends on
+`mark::Operand`, `ber.rs` (to encode the operand) and `clipboard.rs`, and on
+`keymap::KeyBindingSet` to decide whether a copy also touches the system
+clipboard; `paste.rs` depends on `app.rs`, `ber.rs` and `clipboard.rs`
+directly, and on `buffer.rs` narrowly — `resolve_clipboard` takes an
+`Option<&buffer::ElementBuffer>` and reads its `.bytes` field as the FR-017
+fallback source when the system clipboard is empty or unavailable — while
+`PasteSource::Buffer(Vec<u8>)` itself is still built from raw bytes cloned
+from `app.element_buffer` at the call site, since a borrow of the buffer
+alongside a `&mut App` call did not type-check; `vim.rs` depends only on `app.rs`'s `Editor` and ratatui's
+key types — it drives the editor's existing `move_horizontal`/
+`move_vertical`/selection/undo/paste machinery rather than reimplementing
+any of it;
 `app.rs` depends on all of the above; `tui.rs` renders `app.rs` and resolves
 OID display names through `oid.rs` and formats file change-times through
 `libc` (POSIX `localtime_r` / Windows `localtime_s`). External dependencies: `ratatui`, `aws-lc-rs`,
@@ -406,6 +443,85 @@ what the encapsulation heuristic sees (e.g. two items no longer "fill the
 value exactly" as one); after the rebuild such a node is then displayed as
 a plain primitive value again — consistent with what dumpasn1 would show
 for the resulting bytes.
+
+### Marking, the element buffer and paste (`src/mark.rs`, `src/buffer.rs`, `src/paste.rs`)
+
+Delete, cut, copy and paste act on **multiple sibling elements** the same
+way insert/retag/delete/reorder act on one: they mutate the node forest in
+place and then run the same `rebuild()` pipeline. Three modules split the
+work by what each stage owns.
+
+**The mark** (`src/mark.rs`). Shift+Up/Down (`keymap::TreeAction::MarkUp`/
+`MarkDown`) extends a `Mark { source, parent, anchor, active }`: `anchor` is
+the sibling index where marking began, `active` the one the cursor last
+extended to. Both are sibling indices *within one parent*, not `app.rows`
+indices — `rebuild_rows()` recomputes `rows` from scratch after every
+structural edit, filter change or decrypt, so a row index carries no
+meaning across it, while a parent path plus sibling indices does, since
+only inserting/removing a sibling renumbers them, and every operation that
+does that clears the mark first. `Mark::range()` always reports
+`min(anchor, active)..=max(anchor, active)`; extending is not clamped to
+stay on `anchor`'s side, so Shift+Up can cross back past the anchor and
+keep marking on the other side, mirroring shift-selection in a text
+editor. Marking (and deriving an operand from the plain selection) is
+refused on the same rows single-element delete already refuses —
+`DecryptedPlaceholder`, an elided filter placeholder, an uneditable
+reveal, a protected region root — via one shared `row_refusal` helper, and
+is refused outright while the tree filter is non-empty, since a "run of
+contiguous siblings" could otherwise silently include elements the filter
+is hiding. `App::operand()` is what every tree operation actually calls:
+the mark's range if one exists, otherwise the current selection as a
+one-element range — this is the *operand* the spec calls it.
+
+**The element buffer** (`src/buffer.rs`). `ElementBuffer` is deliberately
+just bytes: `ElementBuffer::from_operand` encodes the operand's `Node`s via
+`ber::encode_forest` and discards the `Node`s, because a `Node`'s meaning
+(offsets, parent links via path) goes stale the instant the document is
+edited or switched, while an encoding does not. This buffer is one per
+`App`, replaced whole on every copy/cut/delete/yank regardless of binding
+set, and is **not** the system clipboard and **not** an editor's own vim
+register (`vim.rs`'s `VimState::register`, a separate, per-editor store for
+in-value yank/put) — see the module doc comment for the full three-way
+distinction. `copy_operand`/`cut_operand`/`delete_operand` share one
+`copy_operand_buffer` helper that decides the status wording and whether
+the system clipboard is touched at all: under `KeyBindingSet::Vim` it never
+is (FR-025/FR-027), so `y` and Ctrl+C both route through `TreeAction::Copy`
+(there is no separate `Yank` action — see `keymap.rs`'s doc comment) and
+land here identically; only `self.bindings` at call time decides whether
+`clipboard::write` also runs and which status wording (`"copied"`/`"cut"`
+vs. `"yanked"`/`"cut"`) is used. A completed two-step `d` `d` calls
+`delete_operand`, which removes the operand from the forest and — sharing
+the same fill step as copy — leaves it in the element buffer under vim
+bindings, so `p` can restore or relocate it (FR-026).
+
+**Paste** (`src/paste.rs`). `App::paste_tree(source: PasteSource, at:
+PasteWhere)` is the single entry point for Ctrl+V, `p`/`P`, and all three
+Edit-menu paste entries. It runs in three steps documented in the module's
+own doc comment: (1) *resolve* a `PasteSource` (`Clipboard` or
+`Buffer(Vec<u8>)`) to bytes plus a `Reading` — `Clipboard` reads via
+`clipboard::read()` and interprets the text via
+`clipboard::bytes_for_paste` (hex, then base64, then PEM — one or more
+armoured blocks concatenated — then raw bytes), falling back to the
+element buffer when the clipboard is empty or unavailable (FR-017), while
+`Buffer` bytes (always vim's `p`/`P`, or a menu paste under vim bindings)
+are used as-is; (2) *validate* by parsing the bytes as a complete forest
+via `ber::parse_forest` — because that function's loop can only return
+`Ok` once every byte has been consumed into a node, there is no separate
+"was anything left over" check needed, and several PEM blocks pasted
+together simply become several pasted elements, not an error; (3) *place*
+the parsed nodes before, after, or as the first child of the selection
+(`PasteWhere`), subject to the exact same region rules
+`sibling_insert_root_reason` and the elided/reveal checks already enforce
+for `i`/`I` (C-008). Any failure at step 1 or 2 leaves the document
+completely untouched — no `rebuild()`, no `dirty = true` (NFR-003); only a
+successful step 3 mutates anything. `App::paste_tree` never talks to
+`buffer.rs` directly: `tui.rs`/`app.rs` clone `app.element_buffer`'s bytes
+into a `PasteSource::Buffer` at the call site, because a live borrow of the
+buffer alongside the `&mut self` call did not type-check. The before/after
+dialog (`Mode::PasteWhere`, opened only by Ctrl+V on a first sibling, since
+vim's `p`/`P` and the menu's separate Paste before/after entries already
+say which) is `tui.rs`'s concern, not `paste.rs`'s — the module itself is
+given a `PasteWhere` already decided.
 
 ## 8. ASN.1 specifications (`src/spec.rs`, `specs/asn1/`)
 
@@ -1578,7 +1694,7 @@ offer them). Read-only signature verification against the document itself
   checkbox, and typing to edit the file name / password).
 * **Status bar**: `[modified]` flag, last action / error message, key help.
 
-### Key bindings
+### Key bindings — normal
 
 `Tab` switches keyboard focus between the file browser pane and the
 document (tree/content) panes, both in and out of a loaded document; `q`
@@ -1587,8 +1703,11 @@ apply to whichever pane is focused — arrow keys and fold navigation work
 the same way in both, but in the browser they also live-preview the
 highlighted file (see above), `Enter`/`Space` switches focus to an
 already-previewed file (or folds a directory) versus toggling fold in the
-tree, and the editing/save/insert/delete/reorder keys only apply to the
-document pane.
+tree, and the editing/save/insert/delete/reorder/mark/paste keys only apply
+to the document pane. This is the default set (`KeyBindingSet::Normal`,
+`src/keymap.rs`); everything in this table except the Shift+Up/Down,
+Ctrl+C/V/X rows below is common to both binding sets (C-003: normal
+bindings are unchanged from before this mission, additively).
 
 | Key | Action |
 |-----|--------|
@@ -1604,7 +1723,11 @@ document pane.
 | `i` | insert new element after the selection (type-picker dialog, then value) |
 | `I` | insert new element as first child of a constructed element |
 | `←→`/`Tab`, `↑↓`, `0-9`, `Enter`, `Esc` | (type picker) column / selection / tag number / confirm / cancel |
-| `d` `d` | delete selected element (first press arms a confirmation) |
+| `Shift+↑` / `Shift+↓` | extend/shrink the mark over siblings (both binding sets); refused while the tree filter is set |
+| `d` `d` | delete the operand — the mark if one exists, else the selection (first press arms a confirmation) |
+| `Ctrl+C` | copy the operand to the element buffer and the system clipboard (hex text) |
+| `Ctrl+X` | cut: copy, then remove, with no further confirmation |
+| `Ctrl+V` | paste the clipboard (falling back to the element buffer) after the selection; opens the before/after dialog (`Mode::PasteWhere`) on a first sibling |
 | `J` / `K` | move selected element down / up among its siblings |
 | `Enter` / `Esc` | (edit mode) apply / cancel |
 | `s` | save (re-encode + re-wrap container) |
@@ -1613,6 +1736,70 @@ document pane.
 | `/` | (tree) focus the tree-filter field; (browser) recursive file content search across every parseable file. `⏎`/`Tab` returns to navigating, `Esc` clears |
 | `[` / `]` | scroll content pane |
 | `q` | quit (`q q` to discard unsaved changes) |
+| `Alt+M` (or `Alt`, `F10`) | show/hide the menu bar — the `Edit` heading exposes Delete/Cut/Copy/Paste before/Paste after/Paste as child, and `File ▸ Settings` opens the key-binding dialog (§11a) |
+
+### Key bindings — vim
+
+`KeyBindingSet::Vim` (`src/keymap.rs`) replaces every row above that
+mentions Shift+Up/Down, `d`, Ctrl+C/V/X with the rows below; every other
+row of the normal table (navigation, `e`/`E`, `i`/`I`, `J`/`K`, `s`, `z`,
+`/`, the menu bar, …) is unchanged — this mission adds no vim-specific
+navigation. `Shift+↑`/`Shift+↓` and `d` `d` behave exactly as in the
+normal table (marking and the operand rule are shared); `Ctrl+C`,
+`Ctrl+V`, `Ctrl+X` and `Ctrl+Z` are contractually unbound in the tree and
+in every editor (C-002), so a later vim feature can claim them without
+breaking anything documented today.
+
+| Key | Action |
+|-----|--------|
+| `y` | copy the operand to the element buffer only — never the system clipboard |
+| `p` | paste the element buffer after the selection; no before/after dialog |
+| `P` | paste the element buffer before the selection; no before/after dialog |
+| `d` `d` | delete the operand; also fills the element buffer with what was removed |
+
+Under vim bindings the value editors (`e`/`E`) are additionally modal
+(`src/vim.rs`), driving the existing `Editor` operations rather than a
+second implementation of them:
+
+| Key | Action |
+|-----|--------|
+| `i` / `a` / `I` / `A` | (normal mode) enter insert mode at / after / at line start / at line end |
+| `Esc` | (insert mode) return to normal mode, applying nothing |
+| `h`/`l`, `j`/`k`, `0`, `$` | (normal mode) move left/right, up/down (hex rows only), to start/end |
+| `x` | delete under the cursor into the editor's own register |
+| `v` then motion | grow a visual selection; `y`/`d` copy/remove it into the register, `Esc` leaves visual mode |
+| `p` / `P` | put the register's content after / before the cursor |
+| `u` | undo one change (same as `Ctrl+Z` under normal bindings) |
+| `Ctrl+A` / `Ctrl+X` | increment / decrement the number at or after the cursor (octet, integer, OID arc, digit run) |
+| `Enter` | apply the edit (normal or insert mode) |
+| `Esc` | (normal mode) cancel the edit |
+
+### 11a. Settings (`src/settings.rs`)
+
+`File ▸ Settings` (`Mode::Settings`) is the only settings dialog crex has
+today, and it carries exactly one choice: the active `KeyBindingSet`
+(normal or vim, normal is the default). `↑`/`↓` picks, `Enter` applies the
+choice at once — to the tree, the menu bar, the help window and any editor
+opened afterwards — and writes it to disk; `Esc` discards the dialog and
+changes nothing.
+
+The setting is stored as a small, hand-written subset of TOML (`key =
+"value"` lines, `#` comments, blank lines — no `toml`/`serde` dependency;
+see `contracts/settings-file.md` for the exact grammar) in an OS-typical
+per-user configuration location, never in the working directory or beside
+opened files (C-006): `$XDG_CONFIG_HOME/crex/config.toml` (or
+`~/.config/crex/config.toml`) on Linux, `~/Library/Application
+Support/crex/config.toml` on macOS, `%APPDATA%\crex\config.toml` on
+Windows. `settings::load()` never panics: a missing file is the ordinary
+first-run case (defaults, no notice); a file that exists but cannot be
+read or parsed also falls back to defaults, but surfaces a dismissible
+start-up notice naming the file and the problem (NFR-004); a file with
+keys this build does not recognise round-trips them unchanged (`Settings`'s
+`unknown` field), so a newer build's settings file stays readable by an
+older one as the format grows (C-007). If the configuration directory does
+not exist, `settings::save()` creates it; if writing still fails, the
+choice applies for the rest of the session and the status line reports
+that it was not persisted.
 
 ### Tree filter (`/`)
 

@@ -1,0 +1,52 @@
+schema_version: "1.0"
+id: REFRESH_PLANNING_COMMIT_SHA_ON_TASK_EDITS
+title: Refresh the recorded planning commit after mid-mission task edits
+intent: >
+  `finalize-tasks` freezes `lanes.json`'s `planning_commit_sha` at the commit
+  it ran against. If planning artifacts under `kitty-specs/<mission>/`
+  (tasks.md, WP prompt files, data-model.md, plan.md) are edited afterward —
+  a dependency-field fix, an `/spec-kitty.analyze` remediation, a manual
+  correction — every lane created from then on independently re-merges the
+  now-stale frozen commit. On a mission observed in practice (9 WPs), this
+  produced an avoidable merge conflict on nearly every lane claim and forced
+  an operator-driven `--force` past the resulting "kitty-specs/ tracking
+  state" gate on `move-task`, for every single work package.
+enforcement: advisory
+scope: >
+  Applies to the implement-review loop for any software-dev mission where
+  `kitty-specs/<mission>/` planning files are edited after `finalize-tasks`
+  has already run — including fixes discovered during `/spec-kitty.analyze`,
+  post-hoc dependency corrections, or any other edit to tasks.md or a WP
+  prompt file once lane allocation has begun.
+procedures:
+  - Before claiming the first WP of a mission whose planning artifacts were
+    edited after `finalize-tasks` last ran, check whether `lanes.json`'s
+    `planning_commit_sha` is an ancestor of the current planning-branch HEAD
+    (`git merge-base --is-ancestor <sha> HEAD`).
+  - If it is not — or if any kitty-specs/ file was edited since that commit —
+    either re-run `spec-kitty agent mission finalize-tasks` or update
+    `planning_commit_sha` in `lanes.json` to the current HEAD before claiming
+    further work packages, so new lanes merge the corrected content directly
+    instead of re-encountering superseded content.
+  - When a fresh lane still reports a merge conflict against the recorded
+    planning commit, resolve it by keeping the newer (already-corrected)
+    content rather than reintroducing the stale version, and verify the
+    resulting file matches the current planning branch before committing.
+  - If the repository's `.gitattributes` (and its custom merge drivers, e.g.
+    for `status.events.jsonl`) postdates a lane's fork point, seed
+    `.gitattributes` into that lane before its first merge so the driver
+    actually applies instead of falling back to a raw text conflict.
+integrity_rules:
+  - '`planning_commit_sha` must be treated as a live reference kept
+    ancestor-current with `kitty-specs/<mission>/`, not a fire-and-forget
+    snapshot taken once at task finalization.'
+  - A lane's first merge conflict against the recorded planning commit is a
+    signal to check for staleness, not just something to resolve and move
+    past silently.
+validation_criteria:
+  - No work package in a mission requires an operator to manually resolve a
+    kitty-specs/ merge conflict against the recorded planning commit more
+    than once per genuinely new edit.
+  - '`--force` overrides on `move-task` due to kitty-specs/ tracking-state
+    gates are traceable to a specific, understood cause (documented in the
+    mission''s retrospective or Activity Log), not treated as routine.'

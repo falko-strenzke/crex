@@ -1,0 +1,165 @@
+{
+  "event_count": 73,
+  "last_event_id": "01M2393VTMZNWBA3X8MN5VB19Y",
+  "materialized_at": "2026-09-09T14:28:26.068183+00:00",
+  "mission_number": "",
+  "mission_slug": "asn1-tree-delete-copy-paste-01M22R1E",
+  "mission_type": "",
+  "summary": {
+    "approved": 0,
+    "blocked": 0,
+    "canceled": 0,
+    "claimed": 0,
+    "done": 9,
+    "for_review": 0,
+    "in_progress": 0,
+    "in_review": 0,
+    "planned": 0
+  },
+  "work_packages": {
+    "WP01": {
+      "actor": "merge",
+      "agent": "claude",
+      "force_count": 2,
+      "lane": "done",
+      "last_event_id": "01M2393TXVHT6MM7R9137W420Y",
+      "last_transition_at": "2026-09-09T14:28:25.147075+00:00",
+      "review_result": {
+        "feedback_path": "/home/fstrenzke/dev/crex/kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/tasks/WP01-key-binding-sets-and-action-translation/review-cycle-1.md",
+        "reference": "review-cycle://asn1-tree-delete-copy-paste-01M22R1E/WP01-key-binding-sets-and-action-translation/review-cycle-1.md",
+        "reviewer": "user",
+        "verdict": "approved"
+      },
+      "shell_pid": 13724,
+      "shell_pid_created_at": "1788956108.83"
+    },
+    "WP02": {
+      "actor": "merge",
+      "agent": "claude",
+      "force_count": 2,
+      "lane": "done",
+      "last_event_id": "01M2393V5EZ3HFA3BKWZJW6MWT",
+      "last_transition_at": "2026-09-09T14:28:25.390628+00:00",
+      "review_result": {
+        "feedback_path": "/home/fstrenzke/dev/crex/kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/tasks/WP02-settings-persistence-and-startup-loading/review-cycle-1.md",
+        "reference": "review-cycle://asn1-tree-delete-copy-paste-01M22R1E/WP02-settings-persistence-and-startup-loading/review-cycle-1.md",
+        "reviewer": "user",
+        "verdict": "approved"
+      },
+      "shell_pid": 42020,
+      "shell_pid_created_at": "1788957260.69"
+    },
+    "WP03": {
+      "actor": "merge",
+      "agent": "claude",
+      "force_count": 4,
+      "lane": "done",
+      "last_event_id": "01M2393V8VHG99WZNGABKZJ9SJ",
+      "last_transition_at": "2026-09-09T14:28:25.499214+00:00",
+      "review_result": {
+        "feedback_path": "/home/fstrenzke/dev/crex/kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/tasks/WP03-mark-model-and-highlighting/review-cycle-2.md",
+        "reference": "review-cycle://asn1-tree-delete-copy-paste-01M22R1E/WP03-mark-model-and-highlighting/review-cycle-2.md",
+        "reviewer": "user",
+        "verdict": "approved"
+      },
+      "shell_pid": 67055,
+      "shell_pid_created_at": "1788958476.19"
+    },
+    "WP04": {
+      "actor": "merge",
+      "agent": "claude",
+      "force_count": 2,
+      "lane": "done",
+      "last_event_id": "01M2393VC8WVH3KCVY7450S923",
+      "last_transition_at": "2026-09-09T14:28:25.608179+00:00",
+      "review_result": {
+        "feedback_path": "/home/fstrenzke/dev/crex/kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/tasks/WP04-element-buffer-and-operand-editing/review-cycle-1.md",
+        "reference": "review-cycle://asn1-tree-delete-copy-paste-01M22R1E/WP04-element-buffer-and-operand-editing/review-cycle-1.md",
+        "reviewer": "user",
+        "verdict": "approved"
+      },
+      "shell_pid": 71571,
+      "shell_pid_created_at": "1788958870.21"
+    },
+    "WP05": {
+      "actor": "merge",
+      "agent": "claude",
+      "force_count": 2,
+      "lane": "done",
+      "last_event_id": "01M2393V1ZASN7YNV3SVG9AHWY",
+      "last_transition_at": "2026-09-09T14:28:25.279133+00:00",
+      "review_result": {
+        "feedback_path": "/home/fstrenzke/dev/crex/kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/tasks/WP05-clipboard-pem-reading/review-cycle-1.md",
+        "reference": "review-cycle://asn1-tree-delete-copy-paste-01M22R1E/WP05-clipboard-pem-reading/review-cycle-1.md",
+        "reviewer": "user",
+        "verdict": "approved"
+      },
+      "shell_pid": 15775,
+      "shell_pid_created_at": "1788956227.27"
+    },
+    "WP06": {
+      "actor": "merge",
+      "agent": "claude",
+      "force_count": 2,
+      "lane": "done",
+      "last_event_id": "01M2393VFVPPGE3G18JQQ79GSA",
+      "last_transition_at": "2026-09-09T14:28:25.723277+00:00",
+      "review_result": {
+        "feedback_path": "/home/fstrenzke/dev/crex/kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/tasks/WP06-paste-pipeline-and-placement/review-cycle-1.md",
+        "reference": "review-cycle://asn1-tree-delete-copy-paste-01M22R1E/WP06-paste-pipeline-and-placement/review-cycle-1.md",
+        "reviewer": "user",
+        "verdict": "approved"
+      },
+      "shell_pid": 92219,
+      "shell_pid_created_at": "1788960103.99"
+    },
+    "WP07": {
+      "actor": "merge",
+      "agent": "claude",
+      "force_count": 2,
+      "lane": "done",
+      "last_event_id": "01M2393VPT6HPBTFEBX2TEQNEW",
+      "last_transition_at": "2026-09-09T14:28:25.946085+00:00",
+      "review_result": {
+        "feedback_path": "/home/fstrenzke/dev/crex/kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/tasks/WP07-edit-menu-and-settings-dialog/review-cycle-1.md",
+        "reference": "review-cycle://asn1-tree-delete-copy-paste-01M22R1E/WP07-edit-menu-and-settings-dialog/review-cycle-1.md",
+        "reviewer": "user",
+        "verdict": "approved"
+      },
+      "shell_pid": 121785,
+      "shell_pid_created_at": "1788961566.07"
+    },
+    "WP08": {
+      "actor": "merge",
+      "agent": "claude",
+      "force_count": 2,
+      "lane": "done",
+      "last_event_id": "01M2393VKAPES4170RVW15ACWF",
+      "last_transition_at": "2026-09-09T14:28:25.834520+00:00",
+      "review_result": {
+        "feedback_path": "/home/fstrenzke/dev/crex/kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/tasks/WP08-vim-modal-value-editors/review-cycle-1.md",
+        "reference": "review-cycle://asn1-tree-delete-copy-paste-01M22R1E/WP08-vim-modal-value-editors/review-cycle-1.md",
+        "reviewer": "user",
+        "verdict": "approved"
+      },
+      "shell_pid": 97695,
+      "shell_pid_created_at": "1788960230.91"
+    },
+    "WP09": {
+      "actor": "merge",
+      "agent": "claude",
+      "force_count": 4,
+      "lane": "done",
+      "last_event_id": "01M2393VTMZNWBA3X8MN5VB19Y",
+      "last_transition_at": "2026-09-09T14:28:26.068183+00:00",
+      "review_result": {
+        "feedback_path": "/home/fstrenzke/dev/crex/kitty-specs/asn1-tree-delete-copy-paste-01M22R1E/tasks/WP09-documentation-and-doc-tests/review-cycle-2.md",
+        "reference": "review-cycle://asn1-tree-delete-copy-paste-01M22R1E/WP09-documentation-and-doc-tests/review-cycle-2.md",
+        "reviewer": "user",
+        "verdict": "approved"
+      },
+      "shell_pid": 150455,
+      "shell_pid_created_at": "1788963503.86"
+    }
+  }
+}

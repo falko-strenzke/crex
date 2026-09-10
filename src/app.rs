@@ -29,13 +29,19 @@ use crate::clipboard;
 use crate::cost;
 use crate::input::{self, Container};
 use crate::keygen;
+use crate::keymap;
+use crate::keymap::KeyBindingSet;
+use crate::mark::Mark;
 use crate::pathval::{self, PathStatus};
 use crate::pathval_botan;
+use crate::paste::{PasteSource, PasteWhere};
 use crate::pkcs12;
 use crate::pkcs8;
+use crate::settings;
 use crate::spec::{self, Identification, Label, SpecDb};
 use crate::verify::{self, FileRelations, SignatureStatus};
 use crate::oid;
+use crate::vim::VimState;
 use crate::x509::{
     self, basic_constraints, extended_key_usage, key_usage, CaCandidate, Kind, Signable,
     SignableFile,
@@ -323,12 +329,22 @@ impl PickerState {
 pub struct EditState {
     pub kind: EditKind,
     pub editor: Editor,
+    /// Modal-editing state, present only while vim key bindings are active
+    /// (`App.bindings == KeyBindingSet::Vim` at the moment the editor was
+    /// opened — see `App::new_editor_vim_state`). `None` under the normal
+    /// bindings, in which case `src/tui.rs`'s `handle_edit_key` behaves
+    /// exactly as before this work package.
+    pub vim: Option<VimState>,
 }
 
 impl EditState {
-    /// Hex-grid editor over `content` (the classic 'e' edit).
+    /// Hex-grid editor over `content` (the classic 'e' edit). Always opens
+    /// with `vim: None`; callers that need vim bindings set it afterwards
+    /// via `App::new_editor_vim_state` (constructing it here would require
+    /// threading the active key-binding set through every call site, most
+    /// of which are tests that don't care about it).
     pub fn hex(kind: EditKind, content: &[u8]) -> Self {
-        EditState { kind, editor: Editor::hex(content) }
+        EditState { kind, editor: Editor::hex(content), vim: None }
     }
 
     /// Convert the editor buffer to content octets; Err carries the
@@ -890,6 +906,310 @@ impl Editor {
             Editor::DateTime(d) => datetime_to_bytes(d),
         }
     }
+
+    // -- vim (WP08) -----------------------------------------------------
+    //
+    // The methods below are narrow, additive helpers the vim command
+    // interpreter (`src/vim.rs`) needs to drive the selection/undo/paste
+    // machinery above uniformly across the three editor kinds, without
+    // vim.rs having to match on `Editor` itself (which would mean it knows
+    // about `HexEditor`/`TextEditor`'s private-ish shape). Each one is a
+    // thin dispatch to the existing per-variant operation; none of them
+    // change what those operations do.
+
+    /// Selects exactly the editing unit at (or immediately after) the
+    /// cursor — an octet in the hex editor, a character in a text editor —
+    /// using the same "no anchor yet" snapping that Shift+motion already
+    /// relies on (`EditHistory::step`), so this is not a second selection
+    /// mechanism. `v` and `x` both start here: `v` leaves the selection
+    /// standing for further motions to extend, `x` deletes it right away.
+    /// `DateTimeEditor` has no unit buffer to select, so this is a no-op
+    /// there (`x` is documented as inert on it, per FR-029).
+    pub fn select_unit_at_cursor(&mut self) {
+        match self {
+            Editor::Hex(_) | Editor::Text(_) => self.move_horizontal(1, true),
+            Editor::DateTime(_) => {}
+        }
+    }
+
+    /// The current selection's items, in the editor's own unit (hex digits
+    /// or characters) — what vim's `y`/`d`/`x` copy into the register.
+    pub fn selection_chars(&self) -> Option<Vec<char>> {
+        match self {
+            Editor::Hex(h) => {
+                let (start, end) = h.selection()?;
+                Some(h.digits[start..end].to_vec())
+            }
+            Editor::Text(t) => {
+                let (start, end) = t.selection()?;
+                Some(t.buf[start..end].to_vec())
+            }
+            Editor::DateTime(_) => None,
+        }
+    }
+
+    /// Removes the current selection, as Ctrl+X already does under normal
+    /// bindings — unified here so vim's `x`/`d` don't need to match on
+    /// `Editor` themselves.
+    pub fn delete_selection(&mut self) -> bool {
+        match self {
+            Editor::Hex(h) => h.delete_selection(),
+            Editor::Text(t) => t.sel.delete_selection(&mut t.buf, &mut t.cursor),
+            Editor::DateTime(_) => false,
+        }
+    }
+
+    /// Drops the selection without touching its content — used after `y`
+    /// so an immediately following `p`/`P` pastes rather than replacing
+    /// what was just copied (a plain, non-extending motion would clear it
+    /// the same way, but `y`/`p` in immediate succession has no such
+    /// motion in between).
+    pub fn clear_selection(&mut self) {
+        match self {
+            Editor::Hex(h) => h.sel.clear_selection(),
+            Editor::Text(t) => t.sel.clear_selection(),
+            Editor::DateTime(_) => {}
+        }
+    }
+
+    /// `u`: step back one change, exactly as Ctrl+Z already does under
+    /// normal bindings.
+    pub fn undo(&mut self) -> bool {
+        match self {
+            Editor::Hex(h) => h.sel.undo(&mut h.digits, &mut h.cursor),
+            Editor::Text(t) => t.sel.undo(&mut t.buf, &mut t.cursor),
+            Editor::DateTime(_) => false,
+        }
+    }
+
+    /// Ctrl+A (`delta` positive) / Ctrl+X (`delta` negative): increment or
+    /// decrement the number at or after the cursor — a hex octet (wraps), a
+    /// decimal integer or OID arc (arbitrary size), a digit run in any
+    /// other text, or the active field of a date/time editor. `Err` when no
+    /// number is found, so the caller can put it on the status line.
+    pub fn adjust_number_at_cursor(&mut self, delta: i8) -> Result<(), String> {
+        match self {
+            Editor::Hex(h) => adjust_hex_octet(h, delta),
+            Editor::Text(t) => match t.format {
+                TextFormat::Integer => adjust_integer_field(t, delta),
+                TextFormat::Oid => adjust_oid_arc(t, delta),
+                _ => adjust_first_digit_run(t, delta),
+            },
+            Editor::DateTime(d) => adjust_datetime_field(d, delta),
+        }
+    }
+}
+
+/// Adjusts the hex octet at (or covering) the cursor, wrapping at the
+/// `u8` boundary (`0xFF + 1 = 0x00`, `0x00 - 1 = 0xFF`).
+fn adjust_hex_octet(h: &mut HexEditor, delta: i8) -> Result<(), String> {
+    let start = h.cursor - h.cursor % HexEditor::UNIT;
+    if start + 1 >= h.digits.len() {
+        return Err("no number at or after the cursor".to_string());
+    }
+    let hex: String = h.digits[start..start + 2].iter().collect();
+    let byte = u8::from_str_radix(&hex, 16)
+        .map_err(|_| "no number at or after the cursor".to_string())?;
+    let new_byte =
+        if delta >= 0 { byte.wrapping_add(delta as u8) } else { byte.wrapping_sub((-delta) as u8) };
+    h.sel.record(&h.digits, h.cursor);
+    for (i, c) in format!("{:02X}", new_byte).chars().enumerate() {
+        h.digits[start + i] = c;
+    }
+    Ok(())
+}
+
+/// `TextFormat::Integer`: the whole buffer is one arbitrary-size decimal
+/// integer (certificate INTEGERs routinely exceed `i128`), so this is
+/// hand-rolled string arithmetic rather than a parsed numeric type.
+fn adjust_integer_field(t: &mut TextEditor, delta: i8) -> Result<(), String> {
+    let s: String = t.buf.iter().collect();
+    if s.trim().is_empty() {
+        return Err("no number at or after the cursor".to_string());
+    }
+    let adjusted = adjust_decimal_string(s.trim(), delta);
+    t.sel.record(&t.buf, t.cursor);
+    t.buf = adjusted.chars().collect();
+    t.cursor = t.buf.len();
+    Ok(())
+}
+
+/// `TextFormat::Oid`: finds the arc (the digits between two dots, or
+/// before the first / after the last) at or after the cursor and adjusts
+/// it as a `u64` — OID arcs can in principle exceed that, but `u64` covers
+/// every arc seen in real certificates by a wide margin, and matching the
+/// INTEGER field's arbitrary-size handling here would need the same
+/// dotted-segment bookkeeping twice over for a case that doesn't arise in
+/// practice.
+fn adjust_oid_arc(t: &mut TextEditor, delta: i8) -> Result<(), String> {
+    let len = t.buf.len();
+    let mut segs: Vec<(usize, usize)> = Vec::new();
+    let mut seg_start = 0;
+    for i in 0..=len {
+        if i == len || t.buf[i] == '.' {
+            segs.push((seg_start, i));
+            seg_start = i + 1;
+        }
+    }
+    let cursor = t.cursor.min(len);
+    let no_number = || "no number at or after the cursor".to_string();
+    let &(start, end) = segs.iter().find(|&&(_, e)| e >= cursor).ok_or_else(no_number)?;
+    if start >= end {
+        return Err(no_number());
+    }
+    let text: String = t.buf[start..end].iter().collect();
+    let arc: u64 = text.parse().map_err(|_| no_number())?;
+    let new_arc =
+        if delta >= 0 { arc.saturating_add(delta as u64) } else { arc.saturating_sub((-delta) as u64) };
+    let new_digits: Vec<char> = new_arc.to_string().chars().collect();
+    t.sel.record(&t.buf, t.cursor);
+    t.buf.splice(start..end, new_digits.iter().copied());
+    t.cursor = start + new_digits.len();
+    Ok(())
+}
+
+/// Any other text field: the first run of ASCII digits at or after the
+/// cursor, grown as needed (`99 -> 100`); the rest of the buffer is left
+/// untouched. There is no sign here — a run of digits embedded in
+/// free-form text has none — so decrementing past zero clamps at it.
+fn adjust_first_digit_run(t: &mut TextEditor, delta: i8) -> Result<(), String> {
+    let cursor = t.cursor.min(t.buf.len());
+    let mut i = cursor;
+    while i < t.buf.len() && !t.buf[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i >= t.buf.len() {
+        return Err("no number at or after the cursor".to_string());
+    }
+    let start = i;
+    while i < t.buf.len() && t.buf[i].is_ascii_digit() {
+        i += 1;
+    }
+    let end = i;
+    let text: String = t.buf[start..end].iter().collect();
+    let mut mag = decimal_digits(&text);
+    for _ in 0..delta.unsigned_abs() {
+        if delta > 0 {
+            mag = mag_add_one(&mag);
+        } else if !mag_is_zero(&mag) {
+            mag = mag_sub_one(&mag);
+        }
+    }
+    let new_digits: Vec<char> = mag_to_string(&mag).chars().collect();
+    t.sel.record(&t.buf, t.cursor);
+    t.buf.splice(start..end, new_digits.iter().copied());
+    t.cursor = start + new_digits.len();
+    Ok(())
+}
+
+/// `DateTimeEditor`: adjusts the active field's value by `delta`, clamped
+/// to the same range `datetime_to_bytes` validates on commit.
+fn adjust_datetime_field(d: &mut DateTimeEditor, delta: i8) -> Result<(), String> {
+    let idx = d.active;
+    let current: i64 = d.fields[idx].parse().unwrap_or(0);
+    let (lo, hi): (i64, i64) = match idx {
+        0 if d.generalized => (0, 9999),
+        0 => (1950, 2049),
+        1 => (1, 12),
+        2 => (1, 31),
+        3 => (0, 23),
+        4 | 5 => (0, 59),
+        _ => (0, 9999),
+    };
+    let new_value = (current + delta as i64).clamp(lo, hi);
+    let width = if idx == 0 { 4 } else { 2 };
+    d.fields[idx] = format!("{:0width$}", new_value, width = width);
+    d.pristine = false;
+    Ok(())
+}
+
+/// A decimal string's digits, most-significant first, as one byte value
+/// (0..=9) per digit — the shared representation `mag_add_one`/
+/// `mag_sub_one` work over.
+fn decimal_digits(s: &str) -> Vec<u8> {
+    let digits: Vec<u8> = s.bytes().filter(|b| b.is_ascii_digit()).map(|b| b - b'0').collect();
+    if digits.is_empty() { vec![0] } else { digits }
+}
+
+fn mag_is_zero(mag: &[u8]) -> bool {
+    mag.iter().all(|&d| d == 0)
+}
+
+fn mag_to_string(mag: &[u8]) -> String {
+    let s: String = mag.iter().map(|d| (d + b'0') as char).collect();
+    let trimmed = s.trim_start_matches('0');
+    if trimmed.is_empty() { "0".to_string() } else { trimmed.to_string() }
+}
+
+/// `+1` on a non-negative decimal magnitude: find the rightmost non-9
+/// digit and increment it, turning every 9 to its right into 0; an
+/// all-9s magnitude (no such digit) grows by one digit (`99 -> 100`).
+fn mag_add_one(mag: &[u8]) -> Vec<u8> {
+    let mut v = mag.to_vec();
+    for d in v.iter_mut().rev() {
+        if *d < 9 {
+            *d += 1;
+            return v;
+        }
+        *d = 0;
+    }
+    let mut out = vec![1];
+    out.extend(v);
+    out
+}
+
+/// `-1` on a non-negative decimal magnitude, mirroring `mag_add_one`: find
+/// the rightmost non-zero digit and decrement it, borrowing through every
+/// 0 to its right (turning each into 9). Callers must not pass an
+/// all-zero magnitude (check with `mag_is_zero` first) — subtracting from
+/// zero is a sign change, which is `adjust_decimal_string`'s job, not
+/// this function's.
+fn mag_sub_one(mag: &[u8]) -> Vec<u8> {
+    let mut v = mag.to_vec();
+    for d in v.iter_mut().rev() {
+        if *d > 0 {
+            *d -= 1;
+            return v;
+        }
+        *d = 9;
+    }
+    v
+}
+
+/// Sign-aware `+delta`/`-delta` on an arbitrary-size decimal string
+/// (`TextFormat::Integer`'s "no `i128`" requirement — real certificate
+/// INTEGERs exceed it). `s` must already be trimmed, with an optional
+/// leading `-` and otherwise all ASCII digits. Crossing zero flips the
+/// sign the same way ordinary integer arithmetic would (`-1 + 1 = 0`,
+/// `0 - 1 = -1`); the result never carries a `-` on a zero magnitude.
+fn adjust_decimal_string(s: &str, delta: i8) -> String {
+    let (mut negative, digits) = match s.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, s),
+    };
+    let mut mag = decimal_digits(digits);
+    let mut remaining = delta;
+    while remaining != 0 {
+        let step_positive = remaining > 0;
+        if step_positive == negative {
+            // The step moves the value toward (or through) zero, so the
+            // magnitude shrinks — or, starting from zero, the sign flips.
+            if mag_is_zero(&mag) {
+                mag = vec![1];
+                negative = !step_positive;
+            } else {
+                mag = mag_sub_one(&mag);
+            }
+        } else {
+            mag = mag_add_one(&mag);
+        }
+        remaining += if step_positive { -1 } else { 1 };
+    }
+    if mag_is_zero(&mag) {
+        negative = false;
+    }
+    let digits = mag_to_string(&mag);
+    if negative { format!("-{digits}") } else { digits }
 }
 
 fn text_to_bytes(t: &TextEditor) -> Result<Vec<u8>, String> {
@@ -1063,6 +1383,14 @@ pub enum MenuAction {
     ResignCms,
     /// Decrypt an encrypted CMS `EnvelopedData` message.
     DecryptCms,
+    /// Paste before the selection — one of the two entries of the
+    /// `Mode::PasteWhere` dialog (see `crate::paste`). Never appears in the
+    /// 'E'/'z' menus; `menu_confirm` never sees it because that dialog is
+    /// driven by `handle_paste_where_key`, not `handle_menu_key`.
+    PasteBefore,
+    /// Paste after the selection — the other entry of the `Mode::PasteWhere`
+    /// dialog. See `PasteBefore`'s doc comment.
+    PasteAfter,
 }
 
 /// One entry of a popup menu.
@@ -1099,6 +1427,54 @@ pub enum TopMenuAction {
     Help,
     /// Show how this binary was built (see `version.rs`).
     Version,
+    /// Open the key-binding-set dialog ([`Mode::Settings`]).
+    Settings,
+    /// Delete the selection (or the marked range) — same as `d d`.
+    EditDelete,
+    /// Cut the operand to the element buffer and, under normal bindings,
+    /// the system clipboard.
+    EditCut,
+    /// Copy the operand to the element buffer and, under normal bindings,
+    /// the system clipboard.
+    EditCopy,
+    /// Paste the element buffer or clipboard immediately before the
+    /// selection.
+    EditPasteBefore,
+    /// Paste the element buffer or clipboard immediately after the
+    /// selection.
+    EditPasteAfter,
+    /// Paste the element buffer or clipboard as the selection's new first
+    /// child — reachable only from this menu (FR-014), no key binding in
+    /// either set.
+    EditPasteAsChild,
+}
+
+/// Maps the six Edit-menu [`TopMenuAction`] variants to the [`keymap::TreeAction`]
+/// whose key [`keymap::label`] should report next to them in the drop-down —
+/// `None` for every other `TopMenuAction` (rendered with no key column, as
+/// today) and for `EditPasteAsChild` itself, which has no key in either
+/// binding set (`keymap::label` already reports `None` for it, so this just
+/// routes to that same answer rather than duplicating it).
+///
+/// Deliberately a function, not a table baked into [`TOP_MENUS`]: the key
+/// text depends on the *active* binding set, which can change at runtime via
+/// the Settings dialog, so it must be looked up fresh on every draw (see
+/// `src/tui.rs`'s menu-bar rendering).
+pub fn top_menu_action_key(action: TopMenuAction) -> Option<keymap::TreeAction> {
+    use keymap::TreeAction;
+    match action {
+        TopMenuAction::EditDelete => Some(TreeAction::Delete),
+        TopMenuAction::EditCut => Some(TreeAction::Cut),
+        TopMenuAction::EditCopy => Some(TreeAction::Copy),
+        TopMenuAction::EditPasteBefore => Some(TreeAction::PasteBefore),
+        TopMenuAction::EditPasteAfter => Some(TreeAction::PasteAfter),
+        TopMenuAction::EditPasteAsChild => Some(TreeAction::PasteAsChild),
+        TopMenuAction::NewDer
+        | TopMenuAction::Save
+        | TopMenuAction::Help
+        | TopMenuAction::Version
+        | TopMenuAction::Settings => None,
+    }
 }
 
 /// One entry of a top menu's drop-down.
@@ -1131,6 +1507,46 @@ pub const TOP_MENUS: &[TopMenu] = &[
                 label: "Save",
                 desc: "write the open document to its output file",
                 action: TopMenuAction::Save,
+            },
+            TopMenuItem {
+                label: "Settings",
+                desc: "change the key-binding set",
+                action: TopMenuAction::Settings,
+            },
+        ],
+    },
+    TopMenu {
+        label: "Edit",
+        items: &[
+            TopMenuItem {
+                label: "Delete",
+                desc: "remove the selection, or the marked range",
+                action: TopMenuAction::EditDelete,
+            },
+            TopMenuItem {
+                label: "Cut",
+                desc: "copy then remove, to the element buffer and clipboard",
+                action: TopMenuAction::EditCut,
+            },
+            TopMenuItem {
+                label: "Copy",
+                desc: "copy to the element buffer and clipboard",
+                action: TopMenuAction::EditCopy,
+            },
+            TopMenuItem {
+                label: "Paste before",
+                desc: "insert the buffer or clipboard before the selection",
+                action: TopMenuAction::EditPasteBefore,
+            },
+            TopMenuItem {
+                label: "Paste after",
+                desc: "insert the buffer or clipboard after the selection",
+                action: TopMenuAction::EditPasteAfter,
+            },
+            TopMenuItem {
+                label: "Paste as child",
+                desc: "insert as the selection's new first child (constructed targets only)",
+                action: TopMenuAction::EditPasteAsChild,
             },
         ],
     },
@@ -1403,11 +1819,64 @@ pub const HELP_TOPICS: &[HelpTopic] = &[
             "'d' deletes the selected element and everything under it. It asks first: the \
              second 'd' carries it out.",
             "",
+            "When several elements are marked (see \"Marking and multi-element edits\"), 'd' \
+             'd' deletes the whole range in one go — the same two-step confirmation, but the \
+             first press names the count instead of a single element: \"delete 5 elements at \
+             offset …? press d again to confirm\".",
+            "",
             "'J' and 'K' move the selected element down and up among its siblings.",
             "",
             "'Ctrl+S' writes the document to its output file — the input file, or whatever '-o' \
              named. Nothing is written to disk until then; 'q' warns once when there are \
              unsaved changes and quits on the second press.",
+        ],
+    },
+    HelpTopic {
+        title: "Marking and multi-element edits",
+        body: &[
+            "Shift+↓ marks the selected element together with its next sibling; each further \
+             Shift+↓ or Shift+↑ grows or shrinks the mark by one sibling, always under the \
+             same parent — trying to reach past the parent's first or last element leaves the \
+             mark unchanged and says why. Marking is refused while the tree filter ('/') is \
+             active, because a run of \"contiguous siblings\" could silently reach across \
+             elements the filter is hiding.",
+            "",
+            "A marked constructed element always carries its whole subtree, collapsed or not, \
+             so an operation on the mark never splits an element down the middle.",
+            "",
+            "Marked rows are shown on a blue background, distinct from the cursor's own \
+             highlight, so it is always clear which rows an operation would affect even when \
+             the cursor sits inside the range.",
+            "",
+            "The mark clears on any selection change that is not itself Shift+↑/Shift+↓ — \
+             plain cursor movement, expanding or collapsing, opening an editor — and on Esc. \
+             Delete, cut and copy all act on the mark when one exists and on the single \
+             selected element otherwise; this is called the operand.",
+            "",
+            "Ctrl+C (normal bindings) or 'y' (vim bindings) copies the operand: its elements, \
+             encoded exactly as they stand, go into crex's own element buffer and — normal \
+             bindings only — onto the system clipboard as hex text; the status line names how \
+             many elements went where. If the clipboard cannot be written the element buffer \
+             still receives them and the status line says so — pasting within crex keeps \
+             working either way. A completed 'd' 'd' also fills the element buffer with what \
+             it removed, under either binding set, so 'p' can bring the deleted elements back.",
+            "",
+            "Ctrl+V (normal bindings) or 'p' / 'P' (vim bindings) pastes. Ctrl+V reads the \
+             system clipboard — tried as hex text, then base64, then PEM (one or more blocks), \
+             then raw bytes, the same three-step reading the value editors' own Ctrl+V uses \
+             (see \"Editing values\") — and falls back to the element buffer when the \
+             clipboard is empty or unavailable; the status line says which reading was used. \
+             'p' and 'P' under vim bindings always use the element buffer and never the system \
+             clipboard, since the vim set holds no Ctrl+C/V/X/Z bindings at all. Pasted \
+             elements land after the selection ('p', Ctrl+V) or before it ('P'); if the \
+             selection is the first of its siblings, Ctrl+V instead opens a small dialog asking \
+             before or after, since there is no previous sibling to paste after. Content that \
+             does not decode to a whole number of complete elements — a stray trailing byte, a \
+             truncated length — is refused with the reason, and nothing changes.",
+            "",
+            "The Edit menu (see \"Key-binding sets\") lists Delete, Cut, Copy and the three \
+             paste placements, each next to the key of the active binding set, plus \"Paste as \
+             child\" — reachable only from the menu — which fills an empty constructed element.",
         ],
     },
     HelpTopic {
@@ -1482,9 +1951,52 @@ pub const HELP_TOPICS: &[HelpTopic] = &[
             "",
             "\"File ▸ Save\" is the same action as 'Ctrl+S'.",
             "",
+            "\"File ▸ Settings\" opens the key-binding dialog — see \"Key-binding sets\".",
+            "",
+            "The \"Edit\" heading, between File and About, lists Delete, Cut, Copy and the \
+             three paste placements — see \"Marking and multi-element edits\" and \
+             \"Key-binding sets\".",
+            "",
             "\"About ▸ Version\" distinguishes an official build, made from a tagged release \
              and identified by its version number, from a general build, which has no version \
              of its own and is identified by the commit it was built from.",
+        ],
+    },
+    HelpTopic {
+        title: "Key-binding sets",
+        body: &[
+            "\"File ▸ Settings\" opens a small dialog choosing between two key-binding sets, \
+             normal (the default) and vim: ↑↓ picks, Enter saves and applies the choice at \
+             once — to the tree, the menus, the help window and any editor opened afterwards \
+             — Esc leaves everything as it was. The choice is written to a per-user \
+             configuration file (its path is shown in the dialog) and remembered across \
+             restarts; a missing or unreadable file is never fatal, it just falls back to \
+             normal bindings, with a notice only when the file existed but could not be read.",
+            "",
+            "The Edit menu is present under both binding sets and lists Delete, Cut, Copy, \
+             Paste before, Paste after and Paste as child, each next to the key of the active \
+             set — or \"menu only\" for Paste as child, which has no key in either set and is \
+             the only way to paste into an empty constructed element.",
+            "",
+            "Under vim bindings the value editors ('e' / 'E') become modal, the way vim \
+             itself is. An editor opens in normal mode; 'i' / 'a' / 'I' / 'A' enter insert \
+             mode (at the cursor, after it, at the start, at the end), Esc returns to normal \
+             mode without applying or discarding anything, and Enter applies the edit in \
+             either mode. In normal mode 'h' / 'l' / 'j' / 'k' / '0' / '$' move the cursor, \
+             'x' removes the character or octet under it into the editor's own buffer, 'v' \
+             starts a visual selection that grows with the motion keys, 'y' and 'd' copy or \
+             remove that selection into the same buffer, and 'p' / 'P' put its content back \
+             after or before the cursor. 'u' undoes one change, exactly as Ctrl+Z does under \
+             normal bindings.",
+            "",
+            "Ctrl+A increments the number at or after the cursor — the octet under the cursor \
+             in the hex editor (wrapping FF→00), the whole value in the integer editor, the \
+             arc at or after the cursor in the OID editor, or the digit run at or after it \
+             elsewhere. Ctrl+X decrements the same way — under vim bindings Ctrl+X is always \
+             decrement, never the cut it is under normal bindings. Ctrl+C, Ctrl+V and Ctrl+Z \
+             do nothing in any editor mode under vim bindings: the vim set holds none of the \
+             normal set's Ctrl+C/V/X/Z bindings, in the tree or in the editors, so later vim \
+             features can use them without conflict.",
         ],
     },
     HelpTopic {
@@ -1521,8 +2033,11 @@ pub const HELP_TOPICS: &[HelpTopic] = &[
             "  e                     edit the selected element",
             "  E                     choose how to edit it",
             "  i  I                  insert a sibling / a first child",
-            "  d d                   delete the selected element",
+            "  d d                   delete the selected element, or the marked range",
             "  J  K                  move it down / up among its siblings",
+            "  Shift+↑ Shift+↓       mark/extend a run of siblings; Esc or another move clears it",
+            "  Ctrl+C  Ctrl+V        normal bindings: copy / paste the operand (Ctrl+X cuts it)",
+            "  y  p  P               vim bindings: yank / paste after / paste before the operand",
             "  Ctrl+S                save",
             "  z                     decrypt, or re-sign",
             "  /                     filter the tree",
@@ -1601,6 +2116,27 @@ pub enum Mode {
     /// on a background thread: key generation plus one signature per re-signed
     /// object. Displays elapsed and estimated time until the worker finishes.
     Progress(ProgressState),
+    /// Before/after placement dialog (see `crate::paste`), opened when
+    /// normal-bindings Ctrl+V is pressed with the selection as the first
+    /// sibling of its parent (FR-012) — the only case where "after" cannot
+    /// be assumed as the silent default. Reuses the same [`MenuState`]
+    /// popup-menu machinery as [`Mode::EditMenu`].
+    PasteWhere(MenuState),
+    /// The Settings dialog (menu's File ▸ Settings): pick the active
+    /// key-binding set. Enter saves and applies it immediately; Esc
+    /// discards the dialog with no change.
+    Settings(SettingsState),
+}
+
+/// State of the [`Mode::Settings`] dialog: the binding set currently
+/// selected in the dialog (not yet applied), where the settings file would
+/// be written (`None` when no configuration directory could be resolved for
+/// this OS/environment, per `settings::config_path`), and the reason the
+/// last save attempt failed, if any.
+pub struct SettingsState {
+    pub choice: KeyBindingSet,
+    pub path: Option<PathBuf>,
+    pub error: Option<String>,
 }
 
 /// State of the [`Mode::Progress`] window: the running background re-key, its
@@ -2602,6 +3138,19 @@ pub struct App {
     /// Read-only virtual plaintext of a decrypted CMS `EnvelopedData`, once the
     /// user chose "Decrypt message" ('z').
     pub cms_reveal: Option<CmsReveal>,
+    /// A contiguous run of siblings extended with Shift+Up/Down, or `None`
+    /// when nothing is marked. See `src/mark.rs` for the model and the
+    /// invariants every navigation method must uphold.
+    pub mark: Option<Mark>,
+    /// Active key-binding set (normal or vim), loaded from the persisted
+    /// settings file at start-up (`src/settings.rs`) and otherwise left at
+    /// its default. Later work packages read this to choose between the two
+    /// tree/editor key layers.
+    pub bindings: KeyBindingSet,
+    /// The last thing copied, cut or yanked ('src/buffer.rs'), as DER
+    /// bytes plus an element count — `None` until the first copy/cut/yank
+    /// of this session. A later work package's paste reads it.
+    pub element_buffer: Option<crate::buffer::ElementBuffer>,
 }
 
 impl App {
@@ -2667,6 +3216,9 @@ impl App {
             decrypted: None,
             pkcs12: None,
             cms_reveal: None,
+            mark: None,
+            bindings: KeyBindingSet::default(),
+            element_buffer: None,
         };
         app.rebuild_rows();
         app.recompute_sig_status(); // also refreshes browser_relations
@@ -2721,6 +3273,9 @@ impl App {
             decrypted: None,
             pkcs12: None,
             cms_reveal: None,
+            mark: None,
+            bindings: KeyBindingSet::default(),
+            element_buffer: None,
         };
         app.rebuild_rows();
         app.recompute_browser_relations();
@@ -2780,6 +3335,9 @@ impl App {
             decrypted: None,
             pkcs12: None,
             cms_reveal: None,
+            mark: None,
+            bindings: KeyBindingSet::default(),
+            element_buffer: None,
         };
         app.rebuild_rows();
         app.recompute_sig_status();
@@ -2879,6 +3437,10 @@ impl App {
             Focus::Document => Focus::Browser,
         };
         self.open_confirm = false;
+        // A mark only makes sense while the tree pane owns the keys that
+        // extend it; leaving it (even temporarily, to the browser pane)
+        // is a selection-context change like any other.
+        self.clear_mark();
     }
 
     /// Load `path` as the current document, replacing whatever (if
@@ -4671,6 +5233,99 @@ impl App {
                     warning: false,
                 })
             }
+            TopMenuAction::Settings => self.open_settings(),
+            TopMenuAction::EditDelete => self.delete_selected(),
+            TopMenuAction::EditCut => self.cut_operand(),
+            TopMenuAction::EditCopy => self.copy_operand(),
+            TopMenuAction::EditPasteBefore => {
+                let source = self.menu_paste_source();
+                self.paste_tree(source, PasteWhere::Before);
+            }
+            TopMenuAction::EditPasteAfter => {
+                let source = self.menu_paste_source();
+                self.paste_tree(source, PasteWhere::After);
+            }
+            TopMenuAction::EditPasteAsChild => self.paste_as_child(),
+        }
+    }
+
+    /// Which [`PasteSource`] a menu-driven paste (`EditPasteBefore`/`After`/
+    /// `AsChild`) should use for the active binding set — the same choice
+    /// `tui::paste_after_key` makes for Ctrl+V/`p` (FR-019: vim's paste keys
+    /// never touch the system clipboard).
+    fn menu_paste_source(&self) -> PasteSource {
+        if self.bindings == KeyBindingSet::Vim {
+            let bytes = self.element_buffer.as_ref().map(|b| b.bytes.clone()).unwrap_or_default();
+            PasteSource::Buffer(bytes)
+        } else {
+            PasteSource::Clipboard
+        }
+    }
+
+    /// Edit-menu-only "Paste as child" (FR-014) — the only route to filling
+    /// an empty constructed element, since neither binding set has a key for
+    /// it. Refused by [`App::paste_tree`]'s own `PasteWhere::AsChild`
+    /// handling when the target is primitive and non-encapsulating.
+    pub fn paste_as_child(&mut self) {
+        let source = self.menu_paste_source();
+        self.paste_tree(source, PasteWhere::AsChild);
+    }
+
+    // -- the Settings dialog (File ▸ Settings) -----------------------------
+
+    /// Open the Settings dialog, pre-selecting the binding set currently
+    /// active.
+    pub fn open_settings(&mut self) {
+        self.mode = Mode::Settings(SettingsState {
+            choice: self.bindings,
+            path: settings::config_path(),
+            error: None,
+        });
+    }
+
+    /// Toggle the dialog's radio choice between normal and vim — there are
+    /// only two, so Up/Down/`j`/`k` all just flip it.
+    pub fn settings_toggle(&mut self) {
+        if let Mode::Settings(ref mut s) = self.mode {
+            s.choice = match s.choice {
+                KeyBindingSet::Normal => KeyBindingSet::Vim,
+                KeyBindingSet::Vim => KeyBindingSet::Normal,
+            };
+        }
+    }
+
+    /// Enter: build and save the new [`settings::Settings`], preserving any
+    /// unknown keys a newer build might have written (contract C-007) by
+    /// reloading the file fresh rather than reusing whatever was loaded when
+    /// the dialog opened — this picks up any external edit made while the
+    /// dialog was open, and falls back to defaults (no unknown keys to
+    /// preserve) when there is nothing to load. Applies the chosen binding
+    /// set to `App.bindings` regardless of whether the save itself
+    /// succeeded (FR-024: the set still applies for this run even if saving
+    /// it fails).
+    pub fn submit_settings(&mut self) {
+        let Mode::Settings(ref state) = self.mode else { return };
+        let choice = state.choice;
+        let base = match settings::load() {
+            settings::LoadOutcome::Loaded(s) => s,
+            _ => settings::Settings::default(),
+        };
+        let result = base.with_key_bindings(choice).save();
+        self.bindings = choice;
+        self.status = match result {
+            Ok(()) => format!("key bindings set to {choice} and saved"),
+            Err(reason) => {
+                format!("key bindings set to {choice} for this run — not saved: {reason}")
+            }
+        };
+        self.mode = Mode::Browse;
+    }
+
+    /// Esc: discard the dialog, leaving `App.bindings` untouched.
+    pub fn cancel_settings(&mut self) {
+        if matches!(self.mode, Mode::Settings(_)) {
+            self.mode = Mode::Browse;
+            self.status = "settings unchanged".to_string();
         }
     }
 
@@ -4786,6 +5441,10 @@ impl App {
         }
         self.mode = Mode::FilterInput;
         self.filter_cursor = self.filter.chars().count();
+        // A mark cannot coexist with an active filter (see `src/mark.rs`),
+        // and entering the filter field is the point where that stops being
+        // true even before a character is typed.
+        self.clear_mark();
         self.status =
             "type to filter — hex / text / integer / OID readings; ⏎ or Tab navigates, Esc clears"
                 .to_string();
@@ -4977,6 +5636,23 @@ impl App {
         self.status = "filter cleared".to_string();
     }
 
+    /// The node forest backing a given row source, when it exists. The
+    /// read-only counterpart of `forest_mut`, used by `mark.rs` (which only
+    /// ever needs to read sibling counts, never mutate).
+    pub(crate) fn forest(&self, source: RowSource) -> Option<&[Node]> {
+        match source {
+            RowSource::Document => Some(self.roots.as_slice()),
+            RowSource::Decrypted => self.decrypted.as_ref().map(|d| d.roots.as_slice()),
+            RowSource::Pkcs12Revealed(idx) => self
+                .pkcs12
+                .as_ref()
+                .and_then(|p| p.regions.get(idx))
+                .map(|r| r.roots.as_slice()),
+            RowSource::CmsRevealed => self.cms_reveal.as_ref().map(|c| c.roots.as_slice()),
+            RowSource::DecryptedPlaceholder => None,
+        }
+    }
+
     /// The mutable node forest backing a given row source, when it exists.
     fn forest_mut(&mut self, source: RowSource) -> Option<&mut [Node]> {
         match source {
@@ -5113,6 +5789,14 @@ impl App {
     }
 
     pub fn rebuild_rows(&mut self) {
+        // Every caller of `rebuild_rows` is reacting to a structural change
+        // (a filter edit, an insert/delete/move, a decrypt, opening a
+        // different file, ...) — `self.rows` indices are about to mean
+        // something else, and a mark stored as a parent path + sibling
+        // indices is not safe to keep across that (see `src/mark.rs`).
+        // `mark_extend` itself never calls this, so clearing here cannot
+        // clobber an in-progress mark.
+        self.clear_mark();
         let mut rows = Vec::new();
         let encrypted_path = pkcs8::parse(&self.roots)
             .ok()
@@ -5241,6 +5925,7 @@ impl App {
     }
 
     pub fn select(&mut self, index: usize) {
+        self.clear_mark();
         self.selected = index.min(self.rows.len().saturating_sub(1));
         self.tree_state.select(Some(self.selected));
         self.content_scroll = 0;
@@ -5334,16 +6019,48 @@ impl App {
         }
     }
 
+    /// Pure form of `reject_elided_selection`'s check: `Some(message)` when
+    /// `row` is a `[...]` filter placeholder standing in for hidden
+    /// elements, carrying no node of its own. Factored out so that
+    /// `operand()` in `mark.rs` (a `&self` accessor with no status field to
+    /// write through) can apply the same rule without duplicating it.
+    pub(crate) fn elided_reason(row: &Row) -> Option<String> {
+        if row.elided {
+            Some("these rows are hidden by the filter — '/' edits it, Esc there clears".to_string())
+        } else {
+            None
+        }
+    }
+
     /// Structural actions on a `[...]` filter placeholder bail out: the row
     /// stands for hidden elements and carries no node of its own. Returns
     /// `true` (having set the status) when the action must be refused.
     fn reject_elided_selection(&mut self) -> bool {
-        if self.rows.get(self.selected).is_some_and(|r| r.elided) {
-            self.status =
-                "these rows are hidden by the filter — '/' edits it, Esc there clears".to_string();
-            return true;
+        let Some(row) = self.rows.get(self.selected) else { return false };
+        match Self::elided_reason(row) {
+            Some(reason) => {
+                self.status = reason;
+                true
+            }
+            None => false,
         }
-        false
+    }
+
+    /// Pure form of `reject_uneditable_reveal`'s check — see that method's
+    /// doc comment for what it rejects and why. Factored out for the same
+    /// reason as `elided_reason` above.
+    pub(crate) fn uneditable_reveal_reason(&self, row: &Row) -> Option<String> {
+        match row.source {
+            // The decrypted CMS plaintext is always read-only.
+            RowSource::CmsRevealed => Some("decrypted CMS content is read-only".to_string()),
+            RowSource::Pkcs12Revealed(_) => match self.pkcs12.as_ref().map(|p| p.editable.clone()) {
+                Some(Err(reason)) => {
+                    Some(format!("decrypted PKCS#12 content is read-only — {}", reason))
+                }
+                _ => None,
+            },
+            _ => None,
+        }
     }
 
     /// Editing actions on a PKCS#12 revealed row bail out with a message
@@ -5351,20 +6068,45 @@ impl App {
     /// file (the container's MAC cannot be recomputed). Returns `true`
     /// (having set the status) when the edit must be refused.
     fn reject_uneditable_reveal(&mut self) -> bool {
-        match self.rows.get(self.selected).map(|r| r.source) {
-            // The decrypted CMS plaintext is always read-only.
-            Some(RowSource::CmsRevealed) => {
-                self.status = "decrypted CMS content is read-only".to_string();
+        let Some(row) = self.rows.get(self.selected).cloned() else { return false };
+        match self.uneditable_reveal_reason(&row) {
+            Some(reason) => {
+                self.status = reason;
                 true
             }
-            Some(RowSource::Pkcs12Revealed(_)) => match self.pkcs12.as_ref().map(|p| p.editable.clone()) {
-                Some(Err(reason)) => {
-                    self.status = format!("decrypted PKCS#12 content is read-only — {}", reason);
-                    true
-                }
-                _ => false,
-            },
-            _ => false,
+            None => false,
+        }
+    }
+
+    /// `Some(message)` when `row` is the protected top-level SEQUENCE of a
+    /// decrypted PKCS#8/PKCS#12 region — the one node that must stay a
+    /// single wrapping element for the region to remain a valid decrypted
+    /// value. `delete_selected` and `start_insert` each carry their own
+    /// operation-specific wording for hitting this same rule ("the
+    /// decrypted root cannot be deleted", "a decrypted PKCS#8 value must
+    /// remain one top-level SEQUENCE", ...); `operand()` in `mark.rs` is
+    /// generic across whatever operation reads it, so it uses this
+    /// deliberately operation-neutral message instead of picking one of
+    /// theirs.
+    pub(crate) fn protected_root_reason(row: &Row) -> Option<String> {
+        match row.source {
+            RowSource::Decrypted | RowSource::Pkcs12Revealed(_) if row.path.len() == 1 => Some(
+                "the decrypted root must remain one top-level SEQUENCE".to_string(),
+            ),
+            _ => None,
+        }
+    }
+
+    /// Populates the just-opened editor's `EditState.vim` from the active
+    /// key-binding set (FR-028): `Some(VimState::new())` — always Normal
+    /// mode — under vim bindings, `None` under the normal ones. Called
+    /// right after every `self.mode = Mode::Edit(...)` assignment, rather
+    /// than baked into `EditState`'s constructors, since those are also
+    /// used by tests that have no `App` (and so no `bindings`) to read.
+    fn set_editor_vim_state(&mut self) {
+        let vim = (self.bindings == KeyBindingSet::Vim).then(VimState::new);
+        if let Mode::Edit(ref mut edit) = self.mode {
+            edit.vim = vim;
         }
     }
 
@@ -5374,6 +6116,7 @@ impl App {
         }
         let Some(node) = self.selected_node() else { return };
         self.mode = Mode::Edit(EditState::hex(EditKind::Content, &node.content_octets()));
+        self.set_editor_vim_state();
         self.status =
             "editing content octets — type hex digits, Enter applies, Esc cancels".to_string();
     }
@@ -5510,6 +6253,10 @@ impl App {
             MenuAction::Resign => self.start_resign(),
             MenuAction::ResignCms => self.start_resign_cms(),
             MenuAction::DecryptCms => self.decrypt_cms_message(),
+            MenuAction::PasteBefore | MenuAction::PasteAfter => unreachable!(
+                "paste dialog entries are confirmed by handle_paste_where_key, \
+                 never through Mode::EditMenu's menu_confirm"
+            ),
         }
     }
 
@@ -5519,7 +6266,9 @@ impl App {
         self.mode = Mode::Edit(EditState {
             kind: EditKind::Content,
             editor: Editor::text(TextFormat::Base64, initial),
+            vim: None,
         });
+        self.set_editor_vim_state();
         self.status = "editing content octets as base64 — Enter applies".to_string();
     }
 
@@ -5536,7 +6285,9 @@ impl App {
         self.mode = Mode::Edit(EditState {
             kind: EditKind::Content,
             editor: Editor::text(TextFormat::Raw, initial),
+            vim: None,
         });
+        self.set_editor_vim_state();
         self.status = format!(
             "raw edit: typed/pasted characters become the value bytes{}",
             note
@@ -5617,7 +6368,8 @@ impl App {
                 _ => (Editor::hex(v), "no natural form for this type — editing as hex"),
             }
         };
-        self.mode = Mode::Edit(EditState { kind: EditKind::Content, editor });
+        self.mode = Mode::Edit(EditState { kind: EditKind::Content, editor, vim: None });
+        self.set_editor_vim_state();
         self.status = format!("{} — Enter applies, Esc cancels", hint);
     }
 
@@ -5652,14 +6404,8 @@ impl App {
                 (path, 0, row.source)
             } else {
                 let (last, parent) = path.split_last().expect("row paths are non-empty");
-                if row.source == RowSource::Decrypted && parent.is_empty() {
-                    self.status =
-                        "a decrypted PKCS#8 value must remain one top-level SEQUENCE".to_string();
-                    return;
-                }
-                if matches!(row.source, RowSource::Pkcs12Revealed(_)) && parent.is_empty() {
-                    self.status =
-                        "a decrypted PKCS#12 region must remain one top-level SEQUENCE".to_string();
+                if let Some(reason) = sibling_insert_root_reason(row.source, parent.is_empty()) {
+                    self.status = reason;
                     return;
                 }
                 (parent.to_vec(), last + 1, row.source)
@@ -5763,6 +6509,7 @@ impl App {
             PickerTarget::Insert { parent, index, source } => {
                 let kind = EditKind::Insert { parent, index, class, constructed, tag, source };
                 self.mode = Mode::Edit(EditState::hex(kind, &[]));
+                self.set_editor_vim_state();
                 self.status = format!(
                     "value for new {} — hex content octets (may stay empty), Enter inserts",
                     ber::type_name_of(class, tag),
@@ -5904,62 +6651,15 @@ impl App {
         self.status = "element moved — 'Ctrl+S' writes the file".to_string();
     }
 
-    /// Delete the selected element (two-step: the first call only arms the
-    /// confirmation, the second call within the same selection deletes).
+    /// Delete the selected element, or — with a mark active — every marked
+    /// element (two-step: the first call only arms the confirmation, the
+    /// second call within the same selection deletes). Superseded by
+    /// `src/buffer.rs`'s `delete_operand`, which this now just calls; kept
+    /// as a one-line wrapper under its established name since
+    /// `handle_document_key`'s `d`-key call site (and possibly others)
+    /// still calls it by this name.
     pub fn delete_selected(&mut self) {
-        let Some(row) = self.rows.get(self.selected).cloned() else { return };
-        if row.source == RowSource::DecryptedPlaceholder {
-            self.status = "decrypt the content before editing it".to_string();
-            return;
-        }
-        if self.reject_elided_selection() || self.reject_uneditable_reveal() {
-            return;
-        }
-        if matches!(row.source, RowSource::Decrypted | RowSource::Pkcs12Revealed(_))
-            && row.path.len() == 1
-        {
-            self.status = "the decrypted root cannot be deleted".to_string();
-            return;
-        }
-        if !self.delete_confirm {
-            self.delete_confirm = true;
-            self.status = format!(
-                "delete {} at offset {}? press d again to confirm",
-                self.selected_node().map(|n| n.type_name()).unwrap_or_default(),
-                self.selected_node().map(|n| n.offset).unwrap_or_default(),
-            );
-            return;
-        }
-        self.delete_confirm = false;
-        let (&last, parent) = row.path.split_last().expect("row paths are non-empty");
-        let roots = match row.source {
-            RowSource::Document => &mut self.roots,
-            RowSource::Decrypted => {
-                let Some(decrypted) = self.decrypted.as_mut() else { return };
-                &mut decrypted.roots
-            }
-            RowSource::Pkcs12Revealed(idx) => {
-                let Some(region) =
-                    self.pkcs12.as_mut().and_then(|p| p.regions.get_mut(idx))
-                else {
-                    return;
-                };
-                &mut region.roots
-            }
-            RowSource::DecryptedPlaceholder | RowSource::CmsRevealed => unreachable!(),
-        };
-        if parent.is_empty() {
-            roots.remove(last);
-        } else if let Some(p) = node_at_mut(roots, parent) {
-            p.children.remove(last);
-        }
-        self.dirty = true;
-        self.rebuild();
-        self.status = if self.rows.is_empty() {
-            "element deleted — document is now empty ('i' inserts, 'Ctrl+S' writes)".to_string()
-        } else {
-            "element deleted — 'Ctrl+S' writes the file".to_string()
-        };
+        self.delete_operand();
     }
 
     pub fn cancel_edit(&mut self) {
@@ -7201,6 +7901,28 @@ pub fn node_at_mut<'a>(roots: &'a mut [Node], path: &[usize]) -> Option<&'a mut 
     Some(node)
 }
 
+/// `Some(message)` when inserting a *sibling* (`Before`/`After`, never
+/// `AsChild`) at the top level (`parent_is_empty`) of `source`'s forest
+/// would break the C-008 invariant that a decrypted PKCS#8/PKCS#12 region
+/// stay exactly one top-level SEQUENCE. Shared by `App::start_insert` (the
+/// 'i'/'I' insert dialog) and `crate::paste`'s paste pipeline, which enforce
+/// this identical rule for their own new-sibling insertions — factored out
+/// here rather than duplicated, per this mission's paste WP.
+pub(crate) fn sibling_insert_root_reason(source: RowSource, parent_is_empty: bool) -> Option<String> {
+    if !parent_is_empty {
+        return None;
+    }
+    match source {
+        RowSource::Decrypted => {
+            Some("a decrypted PKCS#8 value must remain one top-level SEQUENCE".to_string())
+        }
+        RowSource::Pkcs12Revealed(_) => {
+            Some("a decrypted PKCS#12 region must remain one top-level SEQUENCE".to_string())
+        }
+        _ => None,
+    }
+}
+
 /// Expand every ancestor of `path` so the addressed node shows as a row in
 /// the unfiltered tree. The filter reveals matches regardless of fold state,
 /// so an element selected under the filter can sit inside a collapsed
@@ -7237,6 +7959,191 @@ mod tests {
             roots,
             data.len(),
         )
+    }
+
+    // -- WP07: Edit menu / Settings dialog (T037) --------------------------
+
+    #[test]
+    fn edit_menu_lists_exactly_six_actions_in_order() {
+        let edit_menu =
+            TOP_MENUS.iter().find(|m| m.label == "Edit").expect("Edit menu present");
+        let actions: Vec<TopMenuAction> = edit_menu.items.iter().map(|i| i.action).collect();
+        assert_eq!(
+            actions,
+            vec![
+                TopMenuAction::EditDelete,
+                TopMenuAction::EditCut,
+                TopMenuAction::EditCopy,
+                TopMenuAction::EditPasteBefore,
+                TopMenuAction::EditPasteAfter,
+                TopMenuAction::EditPasteAsChild,
+            ]
+        );
+    }
+
+    #[test]
+    fn file_menu_has_settings_after_save() {
+        let file_menu =
+            TOP_MENUS.iter().find(|m| m.label == "File").expect("File menu present");
+        let actions: Vec<TopMenuAction> = file_menu.items.iter().map(|i| i.action).collect();
+        assert_eq!(actions, vec![TopMenuAction::NewDer, TopMenuAction::Save, TopMenuAction::Settings]);
+    }
+
+    #[test]
+    fn edit_menu_key_labels_match_active_binding_set() {
+        use KeyBindingSet::{Normal, Vim};
+        let cases: &[(TopMenuAction, KeyBindingSet, Option<&str>)] = &[
+            (TopMenuAction::EditDelete, Normal, Some("d d")),
+            (TopMenuAction::EditDelete, Vim, Some("d d")),
+            (TopMenuAction::EditCut, Normal, Some("Ctrl+X")),
+            (TopMenuAction::EditCut, Vim, None), // "menu only"
+            (TopMenuAction::EditCopy, Normal, Some("Ctrl+C")),
+            (TopMenuAction::EditCopy, Vim, Some("y")),
+            (TopMenuAction::EditPasteBefore, Normal, Some("(dialog)")),
+            (TopMenuAction::EditPasteBefore, Vim, Some("P")),
+            (TopMenuAction::EditPasteAfter, Normal, Some("Ctrl+V")),
+            (TopMenuAction::EditPasteAfter, Vim, Some("p")),
+            (TopMenuAction::EditPasteAsChild, Normal, None), // "menu only"
+            (TopMenuAction::EditPasteAsChild, Vim, None),    // "menu only"
+        ];
+        for &(action, set, expected) in cases {
+            let got = top_menu_action_key(action).and_then(|ta| keymap::label(ta, set));
+            assert_eq!(got, expected, "{:?} in {:?}", action, set);
+        }
+        // Non-Edit actions carry no key at all — rendered with no key column.
+        for action in [TopMenuAction::NewDer, TopMenuAction::Save, TopMenuAction::Help,
+            TopMenuAction::Version, TopMenuAction::Settings]
+        {
+            assert_eq!(top_menu_action_key(action), None, "{:?} should have no key mapping", action);
+        }
+    }
+
+    #[test]
+    fn edit_menu_key_label_reflects_binding_set_change_on_next_open() {
+        // The label lookup is computed fresh from `app.bindings`, not cached
+        // anywhere — confirm the same lookup used by the menu render path
+        // changes when the binding set does (the WP's stated highest risk).
+        let normal_copy = top_menu_action_key(TopMenuAction::EditCopy)
+            .and_then(|ta| keymap::label(ta, KeyBindingSet::Normal));
+        let vim_copy = top_menu_action_key(TopMenuAction::EditCopy)
+            .and_then(|ta| keymap::label(ta, KeyBindingSet::Vim));
+        assert_ne!(normal_copy, vim_copy);
+        assert_eq!(normal_copy, Some("Ctrl+C"));
+        assert_eq!(vim_copy, Some("y"));
+    }
+
+    #[test]
+    fn paste_as_child_refused_on_primitive_target() {
+        // SEQUENCE { INTEGER 1 } — select the primitive INTEGER.
+        let data = [0x30, 0x03, 0x02, 0x01, 0x01];
+        let mut app = test_app(&data);
+        app.select(1);
+        // Vim bindings always use the element buffer (never the system
+        // clipboard, whose real contents are unpredictable in a test
+        // environment) — see `App::menu_paste_source`.
+        app.bindings = KeyBindingSet::Vim;
+        app.element_buffer =
+            Some(crate::buffer::ElementBuffer { bytes: vec![0x05, 0x00], count: 1 });
+        let before = ber::encode_forest(&app.roots);
+        app.paste_as_child();
+        assert_eq!(ber::encode_forest(&app.roots), before, "document must be unchanged");
+        assert!(!app.dirty);
+        assert!(
+            app.status.contains("primitive"),
+            "status should name the refusal: {}",
+            app.status
+        );
+    }
+
+    #[test]
+    fn settings_dialog_esc_discards() {
+        let data = [0x05, 0x00];
+        let mut app = test_app(&data);
+        app.bindings = KeyBindingSet::Normal;
+        app.open_settings();
+        app.settings_toggle(); // now Vim in the dialog, not yet applied
+        if let Mode::Settings(ref s) = app.mode {
+            assert_eq!(s.choice, KeyBindingSet::Vim);
+        } else {
+            panic!("Settings dialog expected");
+        }
+        app.cancel_settings();
+        assert!(matches!(app.mode, Mode::Browse));
+        assert_eq!(app.bindings, KeyBindingSet::Normal, "Esc must not change the active bindings");
+    }
+
+    #[test]
+    fn settings_toggle_flips_between_the_two_binding_sets() {
+        let data = [0x05, 0x00];
+        let mut app = test_app(&data);
+        app.mode = Mode::Settings(SettingsState {
+            choice: KeyBindingSet::Normal,
+            path: None,
+            error: None,
+        });
+        app.settings_toggle();
+        assert!(matches!(app.mode, Mode::Settings(SettingsState { choice: KeyBindingSet::Vim, .. })));
+        app.settings_toggle();
+        assert!(matches!(app.mode, Mode::Settings(SettingsState { choice: KeyBindingSet::Normal, .. })));
+    }
+
+    #[test]
+    fn settings_dialog_save_applies_and_persists() {
+        // Point `settings::config_path()` at a private temp directory for
+        // the duration of this test by overriding the environment variables
+        // it resolves from (settings.rs's own `resolve` is parameterised
+        // over these lookups for exactly this kind of test, but that
+        // function is private to its module — this is the same seam from
+        // the outside: settings.rs reads real process env vars only via
+        // `config_path`, so setting them achieves the same isolation).
+        // Guarded by a process-wide mutex since env vars are global state.
+        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = ENV_LOCK.lock().unwrap();
+
+        let dir = std::env::temp_dir().join(format!(
+            "crex-app-settings-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let prev_xdg = std::env::var("XDG_CONFIG_HOME").ok();
+        let prev_home = std::env::var("HOME").ok();
+        unsafe {
+            std::env::set_var("XDG_CONFIG_HOME", &dir);
+            std::env::set_var("HOME", &dir);
+        }
+
+        let data = [0x05, 0x00];
+        let mut app = test_app(&data);
+        app.bindings = KeyBindingSet::Normal;
+        app.open_settings();
+        app.settings_toggle();
+        app.submit_settings();
+
+        assert!(matches!(app.mode, Mode::Browse));
+        assert_eq!(app.bindings, KeyBindingSet::Vim, "chosen set applies immediately");
+        match settings::load() {
+            settings::LoadOutcome::Loaded(s) => {
+                assert_eq!(s.key_bindings, KeyBindingSet::Vim, "chosen set was persisted")
+            }
+            other => panic!("expected the save to have produced a loadable file, got {:?}", other),
+        }
+
+        unsafe {
+            match prev_xdg {
+                Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
+            }
+            match prev_home {
+                Some(v) => std::env::set_var("HOME", v),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -11170,5 +12077,408 @@ mod tests {
             offered(&app)
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // -- WP09: documentation coverage (T046) --------------------------------
+
+    /// Maps every `keymap::TreeAction`/`keymap::EditorAction` variant to a
+    /// short phrase that must appear, verbatim, somewhere in `HELP_TOPICS`.
+    /// English phrases cannot be derived from enum variant names, so this
+    /// mapping is necessarily hand-written — kept small and directly next to
+    /// [`help_topics_cover_actions`] below so that a future contributor
+    /// adding an action is nudged to add both the help text and the mapping
+    /// entry together (NFR-005/SC-007). This is deliberately a coverage
+    /// check, not a wording check: it only asks "is this action mentioned
+    /// anywhere at all".
+    const ACTION_COVERAGE: &[(&str, &str)] = &[
+        ("TreeAction::MarkUp", "Shift+↑"),
+        ("TreeAction::MarkDown", "Shift+↓"),
+        ("TreeAction::Delete", "delete"),
+        ("TreeAction::Cut", "Cut"),
+        ("TreeAction::Copy", "Copy"),
+        ("TreeAction::PasteAfter", "Paste after"),
+        ("TreeAction::PasteBefore", "Paste before"),
+        ("TreeAction::PasteAsChild", "Paste as child"),
+        ("EditorAction::EnterInsertAt", "'i' / 'a' / 'I' / 'A'"),
+        ("EditorAction::EnterInsertAfter", "'i' / 'a' / 'I' / 'A'"),
+        ("EditorAction::EnterInsertLineStart", "'i' / 'a' / 'I' / 'A'"),
+        ("EditorAction::EnterInsertLineEnd", "'i' / 'a' / 'I' / 'A'"),
+        ("EditorAction::MoveLeft", "'h' / 'l' / 'j' / 'k' / '0' / '$'"),
+        ("EditorAction::MoveRight", "'h' / 'l' / 'j' / 'k' / '0' / '$'"),
+        ("EditorAction::MoveUp", "'h' / 'l' / 'j' / 'k' / '0' / '$'"),
+        ("EditorAction::MoveDown", "'h' / 'l' / 'j' / 'k' / '0' / '$'"),
+        ("EditorAction::Home", "'h' / 'l' / 'j' / 'k' / '0' / '$'"),
+        ("EditorAction::End", "'h' / 'l' / 'j' / 'k' / '0' / '$'"),
+        ("EditorAction::DeleteUnderCursor", "'x' removes"),
+        ("EditorAction::VisualStart", "'v' starts a visual selection"),
+        ("EditorAction::Yank", "'y' and 'd' copy or"),
+        ("EditorAction::DeleteSelection", "'y' and 'd' copy or"),
+        ("EditorAction::PutAfter", "'p' / 'P' put"),
+        ("EditorAction::PutBefore", "'p' / 'P' put"),
+        ("EditorAction::Undo", "'u' undoes"),
+        ("EditorAction::Increment", "Ctrl+A increments"),
+        ("EditorAction::Decrement", "Ctrl+X decrements"),
+        ("EditorAction::Apply", "Enter applies the edit"),
+        ("EditorAction::Cancel", "Esc returns to normal mode"),
+        ("EditorAction::LeaveMode", "Esc returns to normal mode"),
+    ];
+
+    /// Every `keymap::TreeAction`/`keymap::EditorAction` variant must have a
+    /// mapping entry above, and its phrase must appear in some `HELP_TOPICS`
+    /// body line — the mechanical half of NFR-005 ("every operation added by
+    /// this mission is findable in the help window").
+    ///
+    /// The exhaustive `match` below (rather than an array of variants) is
+    /// what guarantees the "every variant" half at compile time: adding a
+    /// new `TreeAction`/`EditorAction` variant without extending this match
+    /// stops the crate from compiling, so `ACTION_COVERAGE` cannot silently
+    /// fall behind the enums it documents.
+    #[test]
+    fn help_topics_cover_actions() {
+        use crate::keymap::{EditorAction, TreeAction};
+
+        fn tree_action_name(a: TreeAction) -> &'static str {
+            match a {
+                TreeAction::MarkUp => "TreeAction::MarkUp",
+                TreeAction::MarkDown => "TreeAction::MarkDown",
+                TreeAction::Delete => "TreeAction::Delete",
+                TreeAction::Cut => "TreeAction::Cut",
+                TreeAction::Copy => "TreeAction::Copy",
+                TreeAction::PasteAfter => "TreeAction::PasteAfter",
+                TreeAction::PasteBefore => "TreeAction::PasteBefore",
+                TreeAction::PasteAsChild => "TreeAction::PasteAsChild",
+            }
+        }
+        fn editor_action_name(a: EditorAction) -> &'static str {
+            match a {
+                EditorAction::EnterInsertAt => "EditorAction::EnterInsertAt",
+                EditorAction::EnterInsertAfter => "EditorAction::EnterInsertAfter",
+                EditorAction::EnterInsertLineStart => "EditorAction::EnterInsertLineStart",
+                EditorAction::EnterInsertLineEnd => "EditorAction::EnterInsertLineEnd",
+                EditorAction::MoveLeft => "EditorAction::MoveLeft",
+                EditorAction::MoveRight => "EditorAction::MoveRight",
+                EditorAction::MoveUp => "EditorAction::MoveUp",
+                EditorAction::MoveDown => "EditorAction::MoveDown",
+                EditorAction::Home => "EditorAction::Home",
+                EditorAction::End => "EditorAction::End",
+                EditorAction::DeleteUnderCursor => "EditorAction::DeleteUnderCursor",
+                EditorAction::VisualStart => "EditorAction::VisualStart",
+                EditorAction::Yank => "EditorAction::Yank",
+                EditorAction::DeleteSelection => "EditorAction::DeleteSelection",
+                EditorAction::PutAfter => "EditorAction::PutAfter",
+                EditorAction::PutBefore => "EditorAction::PutBefore",
+                EditorAction::Undo => "EditorAction::Undo",
+                EditorAction::Increment => "EditorAction::Increment",
+                EditorAction::Decrement => "EditorAction::Decrement",
+                EditorAction::Apply => "EditorAction::Apply",
+                EditorAction::Cancel => "EditorAction::Cancel",
+                EditorAction::LeaveMode => "EditorAction::LeaveMode",
+            }
+        }
+
+        let tree_names = [
+            TreeAction::MarkUp,
+            TreeAction::MarkDown,
+            TreeAction::Delete,
+            TreeAction::Cut,
+            TreeAction::Copy,
+            TreeAction::PasteAfter,
+            TreeAction::PasteBefore,
+            TreeAction::PasteAsChild,
+        ]
+        .into_iter()
+        .map(tree_action_name);
+        let editor_names = [
+            EditorAction::EnterInsertAt,
+            EditorAction::EnterInsertAfter,
+            EditorAction::EnterInsertLineStart,
+            EditorAction::EnterInsertLineEnd,
+            EditorAction::MoveLeft,
+            EditorAction::MoveRight,
+            EditorAction::MoveUp,
+            EditorAction::MoveDown,
+            EditorAction::Home,
+            EditorAction::End,
+            EditorAction::DeleteUnderCursor,
+            EditorAction::VisualStart,
+            EditorAction::Yank,
+            EditorAction::DeleteSelection,
+            EditorAction::PutAfter,
+            EditorAction::PutBefore,
+            EditorAction::Undo,
+            EditorAction::Increment,
+            EditorAction::Decrement,
+            EditorAction::Apply,
+            EditorAction::Cancel,
+            EditorAction::LeaveMode,
+        ]
+        .into_iter()
+        .map(editor_action_name);
+
+        let mut names: Vec<&'static str> = tree_names.chain(editor_names).collect();
+        names.sort_unstable();
+        let mut mapped: Vec<&'static str> = ACTION_COVERAGE.iter().map(|(name, _)| *name).collect();
+        mapped.sort_unstable();
+        assert_eq!(
+            names, mapped,
+            "ACTION_COVERAGE must have exactly one entry per TreeAction/EditorAction variant"
+        );
+
+        for &(name, phrase) in ACTION_COVERAGE {
+            let found =
+                HELP_TOPICS.iter().any(|t| t.body.iter().any(|line| line.contains(phrase)));
+            assert!(
+                found,
+                "no HELP_TOPICS body line mentions {name:?}'s expected phrase {phrase:?}"
+            );
+        }
+    }
+
+    /// Tests for the tree mark (`src/mark.rs`) and the `operand()` accessor
+    /// built on it — WP03's own test suite, nested here (rather than in
+    /// `src/mark.rs` itself) purely to reuse `test_app`/`open_real_file`/
+    /// `row_of_source` above without duplicating them. `cargo test mark::`
+    /// still finds these: the module path is `app::tests::mark::...`.
+    mod mark {
+        use super::*;
+
+        /// `SEQUENCE { INTEGER 1, INTEGER 2, INTEGER 3, INTEGER 4, INTEGER 5 }`
+        /// — one constructed parent (row 0, path `[0]`) with five siblings
+        /// (rows 1..=5, paths `[0, 0]..=[0, 4]`), the fixture every test
+        /// below marks over.
+        fn five_integers() -> Vec<u8> {
+            vec![
+                0x30, 0x0F, //
+                0x02, 0x01, 0x01, //
+                0x02, 0x01, 0x02, //
+                0x02, 0x01, 0x03, //
+                0x02, 0x01, 0x04, //
+                0x02, 0x01, 0x05,
+            ]
+        }
+
+        /// Selects the first `INTEGER` sibling (row 1, sibling index 0) and
+        /// marks two elements (`mark_extend(1)` immediately both starts and
+        /// extends the mark — see `App::mark_extend`'s doc comment), so
+        /// `app.mark` is `Some` afterwards.
+        fn make_mark(app: &mut App) {
+            app.select(1);
+            app.mark_extend(1);
+            assert!(app.mark.is_some(), "test setup: mark_extend should have set a mark");
+        }
+
+        #[test]
+        fn mark_extends_and_shrinks_over_siblings() {
+            let data = five_integers();
+            let mut app = test_app(&data);
+            app.select(1); // first INTEGER, sibling index 0
+            app.mark_extend(1); // starts the mark (0..=0) and extends it (0..=1)
+            app.mark_extend(1); // extends further (0..=2)
+            let mark = app.mark.clone().expect("mark set");
+            assert_eq!(mark.range(), 0..=2);
+            assert_eq!(mark.count(), 3);
+
+            app.mark_extend(-1); // shrinks back (0..=1)
+            let mark = app.mark.clone().expect("mark set");
+            assert_eq!(mark.range(), 0..=1);
+            assert_eq!(mark.count(), 2);
+        }
+
+        #[test]
+        fn mark_stops_at_last_sibling_with_status() {
+            let data = five_integers();
+            let mut app = test_app(&data);
+            app.select(5); // last INTEGER, sibling index 4
+            app.mark_extend(1); // starts the mark at 4..=4, then refuses to go past it
+            let mark = app.mark.clone().expect("mark set");
+            assert_eq!(mark.anchor, 4);
+            assert_eq!(mark.active, 4, "active must not move past the last sibling");
+            assert!(!app.status.is_empty());
+            assert!(
+                app.status.to_lowercase().contains("last"),
+                "status should mention the boundary: {:?}",
+                app.status
+            );
+        }
+
+        #[test]
+        fn mark_stops_at_first_sibling_with_status() {
+            let data = five_integers();
+            let mut app = test_app(&data);
+            app.select(1); // first INTEGER, sibling index 0
+            app.mark_extend(-1); // starts the mark at 0..=0, then refuses to go past it
+            let mark = app.mark.clone().expect("mark set");
+            assert_eq!(mark.anchor, 0);
+            assert_eq!(mark.active, 0, "active must not move past the first sibling");
+            assert!(
+                app.status.to_lowercase().contains("first"),
+                "status should mention the boundary: {:?}",
+                app.status
+            );
+        }
+
+        /// The single most important test in this work package: `active`
+        /// must be allowed to cross back *past* `anchor` and keep marking
+        /// on the other side, rather than being clamped to stay on
+        /// `anchor`'s original side (an easy, subtly-wrong alternative
+        /// implementation that would still pass every other test here).
+        #[test]
+        fn mark_crosses_back_past_the_anchor() {
+            let data = five_integers();
+            let mut app = test_app(&data);
+            app.select(3); // third INTEGER, sibling index 2
+            app.mark_extend(1); // anchor=2, active starts at 2 then extends to 3
+            let mark = app.mark.clone().expect("mark set");
+            assert_eq!((mark.anchor, mark.active), (2, 3));
+            assert_eq!(mark.range(), 2..=3);
+
+            app.mark_extend(-1); // active: 3 -> 2 (range 2..=2)
+            app.mark_extend(-1); // active: 2 -> 1 — crosses back past anchor (2)
+            let mark = app.mark.clone().expect("mark set");
+            assert_eq!(mark.anchor, 2, "anchor must not move");
+            assert_eq!(
+                mark.active, 1,
+                "active must be allowed to cross past anchor to the other side"
+            );
+            assert_eq!(
+                mark.range(),
+                1..=2,
+                "range must now extend above into anchor-1..=anchor"
+            );
+            assert!(
+                mark.range().contains(&mark.anchor),
+                "anchor must remain inside the range"
+            );
+        }
+
+        #[test]
+        fn marking_refused_under_active_filter() {
+            let data = five_integers();
+            let mut app = test_app(&data);
+            app.select(1);
+            app.filter = "nonempty".to_string();
+            app.mark_extend(1);
+            assert!(app.mark.is_none(), "marking must be refused while a filter is active");
+            assert!(!app.status.is_empty());
+        }
+
+        #[test]
+        fn mark_clears_on_move_by() {
+            let data = five_integers();
+            let mut app = test_app(&data);
+            make_mark(&mut app);
+            app.move_by(1);
+            assert!(app.mark.is_none(), "move_by must clear the mark");
+        }
+
+        #[test]
+        fn mark_clears_on_select() {
+            let data = five_integers();
+            let mut app = test_app(&data);
+            make_mark(&mut app);
+            app.select(2);
+            assert!(app.mark.is_none(), "select must clear the mark");
+        }
+
+        #[test]
+        fn mark_clears_on_collapse_or_parent() {
+            let data = five_integers();
+            let mut app = test_app(&data);
+            make_mark(&mut app); // selected row 1 (a leaf) is marked
+            app.collapse_or_parent(); // leaf -> moves selection to its parent
+            assert!(app.mark.is_none(), "collapse_or_parent must clear the mark");
+        }
+
+        #[test]
+        fn mark_clears_on_expand_or_child() {
+            let data = five_integers();
+            let mut app = test_app(&data);
+            app.select(0); // the outer SEQUENCE
+            app.toggle_expand(); // collapse it, so only row 0 remains
+            assert_eq!(app.rows.len(), 1);
+            app.mark_extend(1); // marks the (now collapsed) root against itself
+            assert!(app.mark.is_some());
+            app.expand_or_child(); // re-expands it
+            assert!(app.mark.is_none(), "expand_or_child must clear the mark");
+        }
+
+        #[test]
+        fn mark_clears_on_toggle_expand() {
+            let data = five_integers();
+            let mut app = test_app(&data);
+            app.select(0); // the outer SEQUENCE
+            app.mark_extend(1);
+            assert!(app.mark.is_some());
+            app.toggle_expand(); // collapses it
+            assert!(app.mark.is_none(), "toggle_expand must clear the mark");
+        }
+
+        #[test]
+        fn mark_clears_on_start_filter() {
+            let data = five_integers();
+            let mut app = test_app(&data);
+            make_mark(&mut app);
+            app.start_filter();
+            assert!(app.mark.is_none(), "start_filter must clear the mark");
+        }
+
+        #[test]
+        fn mark_clears_on_toggle_focus() {
+            let data = five_integers();
+            let mut app = test_app(&data);
+            make_mark(&mut app);
+            app.toggle_focus();
+            assert!(app.mark.is_none(), "toggle_focus must clear the mark");
+        }
+
+        #[test]
+        fn operand_refuses_elided_and_placeholder_rows() {
+            // An elided ('[...]') filter placeholder.
+            let data = five_integers();
+            let mut app = test_app(&data);
+            app.filter = "zzzz".to_string(); // matches none of the five integers
+            app.rebuild_rows();
+            let elided = app
+                .rows
+                .iter()
+                .position(|r| r.elided)
+                .expect("expected an elided placeholder row under this filter");
+            app.select(elided);
+            assert!(
+                app.operand().is_err(),
+                "operand() must refuse an elided filter placeholder"
+            );
+
+            // An undecrypted PKCS#8 placeholder.
+            let mut app = open_real_file(std::path::Path::new("testdata/enc_pkcs8.der"));
+            let placeholder = row_of_source(&app, RowSource::DecryptedPlaceholder, &[0, 1]);
+            app.select(placeholder);
+            let err = app
+                .operand()
+                .expect_err("operand() must refuse an undecrypted placeholder");
+            assert_eq!(err, "decrypt the content before editing it");
+        }
+
+        #[test]
+        fn operand_falls_back_to_the_current_selection_without_a_mark() {
+            let data = five_integers();
+            let mut app = test_app(&data);
+            app.select(3); // third INTEGER, sibling index 2
+            let operand = app.operand().expect("plain selection is a valid operand");
+            assert_eq!(operand.source, RowSource::Document);
+            assert_eq!(operand.parent, vec![0]);
+            assert_eq!(operand.range, 2..=2);
+        }
+
+        #[test]
+        fn operand_reflects_the_active_mark() {
+            let data = five_integers();
+            let mut app = test_app(&data);
+            make_mark(&mut app); // marks sibling indices 0..=1
+            let operand = app.operand().expect("a mark is a valid operand");
+            assert_eq!(operand.source, RowSource::Document);
+            assert_eq!(operand.parent, vec![0]);
+            assert_eq!(operand.range, 0..=1);
+        }
     }
 }
