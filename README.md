@@ -1,12 +1,13 @@
 # crex
 
-A terminal (TUI) viewer **and editor** for ASN.1 BER/DER files, written in
-Rust with [ratatui](https://ratatui.rs). The nested ASN.1 structure is shown
-as a foldable tree in the left pane; the right pane shows the selected
-element's decoded value and a hex dump of its content octets, which can be
+crex is a terminal (TUI) viewer **and editor** for ASN.1 BER/DER files with support for cryptographic data structures such as X.509 certificates and CRLs, and cryptographic operations on them.
+It is written in
+Rust with use of the [ratatui](https://ratatui.rs) TUI framework. A file browser and the nested ASN.1 structure is shown
+as a foldable tree in the left panes while the right area shows the selected
+data element's decoded value and a hex dump of its content octets, which can be
 edited in place.
 
-Besides being a generic ASN.1/DER editor, the main functionality of crex is editing and viewing cryptographic file files individually. Support for making changes that affect multiple objects in the opened directory are supported. This is an overview of its most important features:
+Besides being a generic ASN.1/DER editor, the main functionality of crex is editing and viewing cryptographic object files such as X.509 certificates and related data structures individually as well as working with folder structures containing such objects. It support for cryptographic operations that affect multiple objects in the opened directory. This is an overview of its most important features:
 
 - Generic ASN.1/DER (PEM or binary) viewing and editing
   - Content search function
@@ -25,6 +26,38 @@ Besides being a generic ASN.1/DER editor, the main functionality of crex is edit
     - ML-DSA, SLH-DSA
     - experimental support for XMSS and LMS: neither of the current crypto-backends supports certificates with these algorithms properly (OpenSSL 3.6: not at all, Botan 3.12: has bugs related to certificate path validation with these algorithms)
 
+## Credits
+
+The tools dump output format as well as that of the ASN.1/DER tree view purposely imitate the [dumpasn1 tool from Peter Gutmann](https://www.cs.auckland.ac.nz/~pgut001/dumpasn1.c).
+
+The parser's structural output (offsets, lengths, type names, including the
+"encapsulated ASN.1 inside OCTET STRING / BIT STRING" heuristic) replicates
+Peter Gutmann's `dumpasn1` and is verified against the real binary by the
+test suite. See [DESIGN.md](DESIGN.md) for the full design.
+
+## Usage
+- Opening a folder in the TUI:
+  ```sh
+  crex my_dir/
+  ```
+  This is the most powerful mode that enables the cryptographic functionality on single object files as well as groups of related objects.
+- Opening a single file in the TUI:
+  ```sh
+  crex cert.der
+  ```
+  edits overwrite `cert.der` on Ctrl+S.
+  To save edits to out.der instead use:
+  ```sh
+  crex -o out.der cert.der
+  ```
+  This mode has no support for the cryptographic operations.
+- Dump the contents of file to stdout in the same format as the dumpasn1 (no TUI)
+  ```sh
+  `crex --dump cert.der`      
+  ```
+
+Input may be raw BER/DER, PEM, bare base64, or hex text; saving re-wraps
+the edited data in the same outer format.
 
 ## The name
 
@@ -33,10 +66,6 @@ l**ex**er: it parses and edits cryptographic object structures (currently
 ASN.1/DER). *Crex crex* is also the scientific name of the corn crake, a bird
 ([Wachtelkönig](https://de.wikipedia.org/wiki/Wachtelk%C3%B6nig)).
 
-The parser's structural output (offsets, lengths, type names, including the
-"encapsulated ASN.1 inside OCTET STRING / BIT STRING" heuristic) replicates
-Peter Gutmann's `dumpasn1` and is verified against the real binary by the
-test suite. See [DESIGN.md](DESIGN.md) for the full design.
 
 ## Build
 
@@ -79,16 +108,6 @@ sets the same variables. A distribution OpenSSL (e.g. Debian's 3.6 packages)
 typically lacks LMS; LMS certificates still verify and re-sign there, via the
 Botan fallback.
 
-## Usage
-
-```sh
-crex cert.der             # open the TUI (edits overwrite cert.der on Ctrl+S)
-crex -o out.der cert.der  # save edits to out.der instead
-crex --dump cert.der      # dumpasn1-style dump to stdout, no TUI
-```
-
-Input may be raw BER/DER, PEM, bare base64, or hex text; saving re-wraps
-the edited data in the same outer format.
 
 ## ASN.1 specifications
 
