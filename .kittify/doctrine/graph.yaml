@@ -1,0 +1,12 @@
+edges: []
+generated_at: '2026-09-09T14:42:20+00:00'
+generated_by: spec-kitty project registration
+nodes:
+- kind: directive
+  label: Check for implicit shared-state dependencies when declaring WP 
+    dependencies
+  urn: directive:CHECK_IMPLICIT_WP_DEPENDENCIES
+- kind: directive
+  label: Refresh the recorded planning commit after mid-mission task edits
+  urn: directive:REFRESH_PLANNING_COMMIT_SHA_ON_TASK_EDITS
+schema_version: '1.0'
